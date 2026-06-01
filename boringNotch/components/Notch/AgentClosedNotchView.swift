@@ -5,41 +5,50 @@
 
 import SwiftUI
 
-// MARK: - Pixel Claw'd logo (matches the Claude Code mascot aesthetic)
+// MARK: - Clawd icon (matches official Claude Code SVG, viewBox 0 0 24 24)
 
-private let clawdColor = Color(red: 232/255, green: 120/255, blue: 88/255)
+private let clawdColor = Color(red: 217/255, green: 119/255, blue: 87/255)
 
-struct ClawdPixelIcon: View {
+struct ClawdIcon: View {
     let size: CGFloat
 
-    // 9x10 pixel grid defining Claw'd silhouette
-    private let pixels: [[Bool]] = [
-        [false, false, true,  true,  true,  true,  true,  false, false],
-        [false, true,  true,  true,  true,  true,  true,  true,  false],
-        [true,  true,  false, true,  true,  true,  false, true,  true ],
-        [true,  true,  true,  true,  true,  true,  true,  true,  true ],
-        [true,  true,  false, false, false, false, false, true,  true ],
-        [false, true,  true,  true,  true,  true,  true,  true,  false],
-        [false, false, true,  true,  false, true,  true,  false, false],
-        [false, true,  true,  false, false, false, true,  true,  false],
-        [false, true,  false, false, false, false, false, true,  false],
-        [false, true,  false, false, false, false, false, true,  false],
-    ]
-
     var body: some View {
-        let cols = pixels[0].count
-        let rows = pixels.count
-        let px = size / CGFloat(max(cols, rows))
+        Canvas { ctx, canvasSize in
+            let scale = canvasSize.width / 24.0
 
-        Canvas { ctx, _ in
-            for (r, row) in pixels.enumerated() {
-                for (c, on) in row.enumerated() where on {
-                    let rect = CGRect(x: CGFloat(c) * px, y: CGFloat(r) * px, width: px, height: px)
-                    ctx.fill(Path(rect), with: .color(clawdColor))
-                }
+            func r(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> Path {
+                Path(CGRect(x: x * scale, y: y * scale, width: w * scale, height: h * scale))
             }
+
+            let color = GraphicsContext.Shading.color(clawdColor)
+
+            // Main body
+            ctx.fill(r(3, 5, 18, 12.079), with: color)
+
+            // Top antenna tabs (same x as eyes, above body)
+            ctx.fill(r(6,     2.153, 1.488, 2.847), with: color)
+            ctx.fill(r(16.51, 2.153, 1.49,  2.847), with: color)
+
+            // Eye holes (cut via .clear)
+            ctx.blendMode = .clear
+            ctx.fill(r(6,     8.102, 1.488, 2.847), with: .color(.black))
+            ctx.fill(r(16.51, 8.102, 1.49,  2.847), with: .color(.black))
+            ctx.blendMode = .normal
+
+            // Side arms (left/right bumps at mid-body)
+            ctx.fill(r(0,  10.95, 3, 3.1), with: color)
+            ctx.fill(r(21, 10.95, 3, 3.1), with: color)
+
+            // Four bottom legs
+            let legY: CGFloat = 17.079
+            let legH: CGFloat = 2.921
+            ctx.fill(r(3,      legY, 1.488, legH), with: color)
+            ctx.fill(r(6,      legY, 1.488, legH), with: color)
+            ctx.fill(r(15,     legY, 1.488, legH), with: color)
+            ctx.fill(r(18.512, legY, 1.488, legH), with: color)
         }
-        .frame(width: CGFloat(cols) * px, height: CGFloat(rows) * px)
+        .frame(width: size, height: size)
+        .compositingGroup()
     }
 }
 
@@ -50,7 +59,7 @@ struct ClawdGlowIcon: View {
     @State private var pulse = false
 
     var body: some View {
-        ClawdPixelIcon(size: size)
+        ClawdIcon(size: size)
             .shadow(color: clawdColor.opacity(pulse ? 0.9 : 0.4), radius: pulse ? 8 : 4)
             .shadow(color: clawdColor.opacity(0.3), radius: 2)
             .onAppear {
