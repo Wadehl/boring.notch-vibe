@@ -47,31 +47,26 @@ struct ClawdIcon: View {
             ctx.fill(r(21, 10.95, 3, 3.1), with: color)
 
             // Four bottom legs with walk animation
-            // Frame A: all legs at y=17.079 (neutral)
-            // Frame B: outer legs raised 1pt, inner legs lowered 1pt (stagger)
+            // Frame A: legs 1&3 shift left 1px, legs 2&4 shift right 1px
+            // Frame B: legs 1&3 shift right 1px, legs 2&4 shift left 1px
             let baseY: CGFloat = 17.079
             let legH: CGFloat = 2.921
+            let shift: CGFloat = 1.0  // horizontal shift in SVG units
 
-            let (y1, h1, y2, h2, y3, h3, y4, h4): (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)
+            let (x1, x2, x3, x4): (CGFloat, CGFloat, CGFloat, CGFloat)
             switch walkFrame {
             case .a:
-                // Neutral: all legs same
-                (y1, h1) = (baseY, legH)
-                (y2, h2) = (baseY, legH)
-                (y3, h3) = (baseY, legH)
-                (y4, h4) = (baseY, legH)
+                x1 = 3      - shift; x2 = 6      + shift
+                x3 = 15     - shift; x4 = 18.512 + shift
             case .b:
-                // Walk: outer legs raised (shorter, higher), inner legs lowered (longer)
-                (y1, h1) = (baseY - 1.5, legH - 0.5) // leg 1 raised
-                (y2, h2) = (baseY + 0.5, legH + 0.5) // leg 2 lowered
-                (y3, h3) = (baseY + 0.5, legH + 0.5) // leg 3 lowered
-                (y4, h4) = (baseY - 1.5, legH - 0.5) // leg 4 raised
+                x1 = 3      + shift; x2 = 6      - shift
+                x3 = 15     + shift; x4 = 18.512 - shift
             }
 
-            ctx.fill(r(3,      y1, 1.488, h1), with: color)
-            ctx.fill(r(6,      y2, 1.488, h2), with: color)
-            ctx.fill(r(15,     y3, 1.488, h3), with: color)
-            ctx.fill(r(18.512, y4, 1.488, h4), with: color)
+            ctx.fill(r(x1, baseY, 1.488, legH), with: color)
+            ctx.fill(r(x2, baseY, 1.488, legH), with: color)
+            ctx.fill(r(x3, baseY, 1.488, legH), with: color)
+            ctx.fill(r(x4, baseY, 1.488, legH), with: color)
         }
         .frame(width: size, height: size)
         .compositingGroup()
