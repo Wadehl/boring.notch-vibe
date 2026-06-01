@@ -63,6 +63,9 @@ struct SettingsView: View {
                 NavigationLink(value: "About") {
                     Label("About", systemImage: "info.circle")
                 }
+                NavigationLink(value: "AgentDebug") {
+                    Label("Agent Debug", systemImage: "ant.circle")
+                }
             }
             .listStyle(SidebarListStyle())
             .tint(.effectiveAccent)
@@ -95,11 +98,13 @@ struct SettingsView: View {
                     if let controller = updaterController {
                         About(updaterController: controller)
                     } else {
-                        // Fallback with a default controller
                         About(
                             updaterController: SPUStandardUpdaterController(
                                 startingUpdater: false, updaterDelegate: nil,
                                 userDriverDelegate: nil))
+                    }
+                case "AgentDebug":
+                    AgentDebugView()
                     }
                 default:
                     GeneralSettings()

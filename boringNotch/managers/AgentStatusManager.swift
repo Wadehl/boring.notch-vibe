@@ -41,15 +41,17 @@ final class AgentStatusManager: ObservableObject {
         sessions.contains { $0.status == .running }
     }
 
-    private let claudeSessionsDir: URL = {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/sessions")
-    }()
+    // App runs in a sandbox so homeDirectoryForCurrentUser returns the container path.
+    // Use the real user home via getpwuid instead.
+    private static var realHomeURL: URL {
+        if let pw = getpwuid(getuid()), let dir = pw.pointee.pw_dir {
+            return URL(fileURLWithPath: String(cString: dir))
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+    }
 
-    private let codexLogsDB: URL = {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex/logs_2.sqlite")
-    }()
+    private let claudeSessionsDir: URL
+    private let codexLogsDB: URL
 
     // DispatchSource watching ~/.claude/sessions/ for file changes
     private var claudeDirSource: DispatchSourceFileSystemObject?
@@ -66,6 +68,9 @@ final class AgentStatusManager: ObservableObject {
     private let codexDropThresholdSeconds: TimeInterval = 60
 
     private init() {
+        let home = Self.realHomeURL
+        claudeSessionsDir = home.appendingPathComponent(".claude/sessions")
+        codexLogsDB = home.appendingPathComponent(".codex/logs_2.sqlite")
         startClaudeWatcher()
         startCodexPoller()
     }
