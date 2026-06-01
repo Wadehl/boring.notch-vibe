@@ -439,38 +439,28 @@ struct NotchHomeView: View {
         Defaults[.showMirror] && webcamManager.cameraAvailable && vm.isCameraExpanded
     }
 
-    @ObservedObject private var agentManager = AgentStatusManager.shared
-
     private var mainContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: (shouldShowCamera && Defaults[.showCalendar]) ? 10 : 15) {
-                MusicPlayerView(albumArtNamespace: albumArtNamespace)
+        HStack(alignment: .top, spacing: (shouldShowCamera && Defaults[.showCalendar]) ? 10 : 15) {
+            MusicPlayerView(albumArtNamespace: albumArtNamespace)
 
-                if Defaults[.showCalendar] {
-                    CalendarView()
-                        .frame(width: shouldShowCamera ? 170 : 215)
-                        .onHover { isHovering in
-                            vm.isHoveringCalendar = isHovering
-                        }
-                        .environmentObject(vm)
-                        .transition(.opacity)
-                }
-
-                if shouldShowCamera {
-                    CameraPreviewView(webcamManager: webcamManager)
-                        .scaledToFit()
-                        .opacity(vm.notchState == .closed ? 0 : 1)
-                        .blur(radius: vm.notchState == .closed ? 20 : 0)
-                        .animation(.interactiveSpring(response: 0.32, dampingFraction: 0.76, blendDuration: 0), value: shouldShowCamera)
-                }
+            if Defaults[.showCalendar] {
+                CalendarView()
+                    .frame(width: shouldShowCamera ? 170 : 215)
+                    .onHover { isHovering in
+                        vm.isHoveringCalendar = isHovering
+                    }
+                    .environmentObject(vm)
+                    .transition(.opacity)
             }
 
-            if !agentManager.sessions.isEmpty {
-                AgentStatusView()
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            if shouldShowCamera {
+                CameraPreviewView(webcamManager: webcamManager)
+                    .scaledToFit()
+                    .opacity(vm.notchState == .closed ? 0 : 1)
+                    .blur(radius: vm.notchState == .closed ? 20 : 0)
+                    .animation(.interactiveSpring(response: 0.32, dampingFraction: 0.76, blendDuration: 0), value: shouldShowCamera)
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: agentManager.sessions.isEmpty)
         .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
         .blur(radius: vm.notchState == .closed ? 30 : 0)
     }

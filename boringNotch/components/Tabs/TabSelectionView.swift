@@ -14,39 +14,63 @@ struct TabModel: Identifiable {
     let view: NotchViews
 }
 
-let tabs = [
+let baseTabs = [
     TabModel(label: "Home", icon: "house.fill", view: .home),
     TabModel(label: "Shelf", icon: "tray.fill", view: .shelf)
 ]
 
 struct TabSelectionView: View {
     @ObservedObject var coordinator = BoringViewCoordinator.shared
+    @ObservedObject var agentManager = AgentStatusManager.shared
     @Namespace var animation
+
+    private var hasActiveSessions: Bool {
+        !agentManager.sessions.filter { $0.status == .running || $0.status == .idle }.isEmpty
+    }
+
+    private var visibleTabs: [TabModel] {
+        var t = baseTabs
+        if hasActiveSessions {
+            t.append(TabModel(label: "AI", icon: "cpu", view: .agentStatus))
+        }
+        return t
+    }
+
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(tabs) { tab in
-                    TabButton(label: tab.label, icon: tab.icon, selected: coordinator.currentView == tab.view) {
-                        withAnimation(.smooth) {
-                            coordinator.currentView = tab.view
-                        }
+            ForEach(visibleTabs) { tab in
+                TabButton(label: tab.label, icon: tab.icon, selected: coordinator.currentView == tab.view) {
+                    withAnimation(.smooth) {
+                        coordinator.currentView = tab.view
                     }
-                    .frame(height: 26)
-                    .foregroundStyle(tab.view == coordinator.currentView ? .white : .gray)
-                    .background {
-                        if tab.view == coordinator.currentView {
-                            Capsule()
-                                .fill(coordinator.currentView == tab.view ? Color(nsColor: .secondarySystemFill) : Color.clear)
-                                .matchedGeometryEffect(id: "capsule", in: animation)
-                        } else {
-                            Capsule()
-                                .fill(coordinator.currentView == tab.view ? Color(nsColor: .secondarySystemFill) : Color.clear)
-                                .matchedGeometryEffect(id: "capsule", in: animation)
-                                .hidden()
-                        }
+                }
+                .frame(height: 26)
+                .foregroundStyle(tab.view == coordinator.currentView ? .white : .gray)
+                .background {
+                    if tab.view == coordinator.currentView {
+                        Capsule()
+                            .fill(Color(nsColor: .secondarySystemFill))
+                            .matchedGeometryEffect(id: "capsule", in: animation)
+                    } else {
+                        Capsule()
+                            .fill(Color.clear)
+                            .matchedGeometryEffect(id: "capsule", in: animation)
+                            .hidden()
                     }
+                }
             }
         }
         .clipShape(Capsule())
+        .onChange(of: hasActiveSessions) { _, active in
+            withAnimation(.smooth) {
+                // Auto-switch to AI tab when sessions become active
+                if active {
+                    coordinator.currentView = .agentStatus
+                } else if coordinator.currentView == .agentStatus {
+                    coordinator.currentView = .home
+                }
+            }
+        }
     }
 }
 
