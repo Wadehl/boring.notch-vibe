@@ -46,7 +46,7 @@ private struct ClaudeAppIcon: View {
     }
 }
 
-// Codex icon: squircle blob + chevron + dash, gradient filled, fill-rule=evenodd
+// Codex icon: precisely converted from official SVG path (arc→bezier, fill-rule=evenodd)
 private struct CodexShape: Shape {
     func path(in rect: CGRect) -> Path {
         let s = min(rect.width, rect.height) / 24.0
@@ -56,32 +56,66 @@ private struct CodexShape: Shape {
             CGPoint(x: ox + x*s, y: oy + y*s)
         }
         var p = Path()
-
-        // Outer blob: squircle matching SVG bounds (~3..21 in both axes)
-        let blobRect = CGRect(x: ox + 3*s, y: oy + 3*s, width: 18*s, height: 18*s)
-        p.addRoundedRect(in: blobRect, cornerSize: CGSize(width: 8*s, height: 8*s))
-
-        // Left chevron (>) — SVG: M8.462,9.23 points to apex ~(9.734,11.454) then down
-        // Stroke the chevron as a filled bowtie arrow shape
-        let chevW = 1.272*s  // horizontal reach
-        let chevH = 2.224*s  // half-height per arm
-        let tipX = ox + (8.462 + 1.272)*s
-        let midY = oy + (9.23 + 2.224)*s
-        let thick = 0.62*s   // stroke thickness (≈ 0.637 * 2 / 2)
-        p.move(to: CGPoint(x: tipX - chevW, y: midY - chevH - thick))
-        p.addLine(to: CGPoint(x: tipX - thick*0.3, y: midY - thick))
-        p.addLine(to: CGPoint(x: tipX - thick*0.3, y: midY + thick))
-        p.addLine(to: CGPoint(x: tipX - chevW, y: midY + chevH + thick))
-        p.addLine(to: CGPoint(x: tipX - chevW - thick, y: midY + chevH))
-        p.addLine(to: CGPoint(x: tipX - chevW*0.5, y: midY))
-        p.addLine(to: CGPoint(x: tipX - chevW - thick, y: midY - chevH))
+        p.move(to: pt(9.0640, 3.3440))
+        p.addCurve(to: pt(11.3490, 3.0320), control1: pt(9.7866, 3.0467), control2: pt(10.5732, 2.9393))
+        p.addCurve(to: pt(14.0220, 4.3070), control1: pt(12.3490, 3.1470), control2: pt(13.2400, 3.5720))
+        p.addCurve(to: pt(14.0590, 4.3280), control1: pt(14.0320, 4.3170), control2: pt(14.0460, 4.3240))
+        p.addCurve(to: pt(14.1020, 4.3280), control1: pt(14.0731, 4.3315), control2: pt(14.0879, 4.3315))
+        p.addCurve(to: pt(17.1480, 4.6030), control1: pt(15.1186, 4.0655), control2: pt(16.1948, 4.1626))
+        p.addLine(to: pt(17.1950, 4.6250))
+        p.addLine(to: pt(17.3110, 4.6820))
+        p.addCurve(to: pt(19.4990, 7.0810), control1: pt(18.3088, 5.1877), control2: pt(19.0870, 6.0410))
+        p.addCurve(to: pt(19.8140, 8.6760), control1: pt(19.7080, 7.5910), control2: pt(19.8120, 8.1220))
+        p.addCurve(to: pt(19.6800, 9.8990), control1: pt(19.8290, 9.0880), control2: pt(19.7839, 9.5000))
+        p.addCurve(to: pt(19.7100, 10.0140), control1: pt(19.6696, 9.9399), control2: pt(19.6809, 9.9834))
+        p.addCurve(to: pt(20.8930, 12.1840), control1: pt(20.3040, 10.6210), control2: pt(20.6980, 11.3440))
+        p.addCurve(to: pt(20.0060, 16.0380), control1: pt(21.1820, 13.6090), control2: pt(20.8860, 14.8940))
+        p.addLine(to: pt(19.8700, 16.2040))
+        p.addCurve(to: pt(17.6690, 17.5920), control1: pt(19.2872, 16.8712), control2: pt(18.5222, 17.3536))
+        p.addCurve(to: pt(17.5880, 17.6680), control1: pt(17.6314, 17.6030), control2: pt(17.6014, 17.6312))
+        p.addCurve(to: pt(16.8480, 19.1620), control1: pt(17.3970, 18.2190), control2: pt(17.2050, 18.6910))
+        p.addCurve(to: pt(13.1370, 21.0000), control1: pt(15.9480, 20.3490), control2: pt(14.6260, 21.0080))
+        p.addCurve(to: pt(9.9800, 19.6980), control1: pt(11.9500, 20.9940), control2: pt(10.8980, 20.5600))
+        p.addCurve(to: pt(9.8750, 19.6740), control1: pt(9.9519, 19.6717), control2: pt(9.9118, 19.6625))
+        p.addCurve(to: pt(8.6710, 19.8120), control1: pt(9.4870, 19.7990), control2: pt(9.0950, 19.8170))
+        p.addCurve(to: pt(6.7260, 19.3460), control1: pt(7.9957, 19.8066), control2: pt(7.3305, 19.6472))
+        p.addCurve(to: pt(5.1160, 18.0110), control1: pt(6.0928, 19.0322), control2: pt(5.5416, 18.5751))
+        p.addCurve(to: pt(4.7020, 17.3940), control1: pt(4.9640, 17.8090), control2: pt(4.8130, 17.6190))
+        p.addCurve(to: pt(4.3320, 16.4330), control1: pt(4.5505, 17.0852), control2: pt(4.4266, 16.7637))
+        p.addCurve(to: pt(4.3180, 14.1350), control1: pt(4.1322, 15.6806), control2: pt(4.1274, 14.8898))
+        p.addCurve(to: pt(4.3240, 14.0790), control1: pt(4.3243, 14.1170), control2: pt(4.3263, 14.0979))
+        p.addCurve(to: pt(4.2970, 14.0310), control1: pt(4.3206, 14.0604), control2: pt(4.3111, 14.0436))
+        p.addCurve(to: pt(3.2630, 12.3800), control1: pt(3.8351, 13.5634), control2: pt(3.4820, 12.9997))
+        p.addCurve(to: pt(3.0120, 11.1880), control1: pt(3.1174, 11.9983), control2: pt(3.0326, 11.5960))
+        p.addCurve(to: pt(3.1530, 9.5880), control1: pt(2.9757, 10.6506), control2: pt(3.0232, 10.1108))
+        p.addCurve(to: pt(5.0860, 6.9700), control1: pt(3.4900, 8.4760), control2: pt(4.1350, 7.6030))
+        p.addCurve(to: pt(5.6870, 6.6400), control1: pt(5.2980, 6.8290), control2: pt(5.4990, 6.7190))
+        p.addCurve(to: pt(6.3330, 6.4130), control1: pt(5.9020, 6.5510), control2: pt(6.1170, 6.4760))
+        p.addCurve(to: pt(6.3980, 6.3470), control1: pt(6.3644, 6.4033), control2: pt(6.3888, 6.3785))
+        p.addCurve(to: pt(7.2270, 4.7320), control1: pt(6.5620, 5.7580), control2: pt(6.8441, 5.2086))
+        p.addCurve(to: pt(9.0640, 3.3440), control1: pt(7.7097, 4.1190), control2: pt(8.3425, 3.6409))
         p.closeSubpath()
-
-        // Right dash (—) — SVG: M12.546,13.909 w=3.636 h=1.272
-        let dashRect = CGRect(x: ox + 12.546*s, y: oy + 13.909*s,
-                              width: 3.636*s, height: 1.272*s)
-        p.addRoundedRect(in: dashRect, cornerSize: CGSize(width: 0.636*s, height: 0.636*s))
-
+        p.move(to: pt(12.5460, 13.9090))
+        p.addCurve(to: pt(11.9447, 14.5450), control1: pt(12.2086, 13.9279), control2: pt(11.9447, 14.2071))
+        p.addCurve(to: pt(12.5460, 15.1810), control1: pt(11.9447, 14.8829), control2: pt(12.2086, 15.1621))
+        p.addLine(to: pt(16.1820, 15.1810))
+        p.addCurve(to: pt(16.7633, 14.8737), control1: pt(16.4177, 15.1942), control2: pt(16.6414, 15.0760))
+        p.addCurve(to: pt(16.7633, 14.2163), control1: pt(16.8851, 14.6715), control2: pt(16.8851, 14.4185))
+        p.addCurve(to: pt(16.1820, 13.9090), control1: pt(16.6414, 14.0140), control2: pt(16.4177, 13.8958))
+        p.addLine(to: pt(12.5460, 13.9090))
+        p.closeSubpath()
+        p.move(to: pt(8.4620, 9.2300))
+        p.addCurve(to: pt(7.6035, 9.0100), control1: pt(8.2821, 8.9370), control2: pt(7.9021, 8.8396))
+        p.addCurve(to: pt(7.3560, 9.8610), control1: pt(7.3048, 9.1804), control2: pt(7.1953, 9.5570))
+        p.addLine(to: pt(8.6280, 12.0850))
+        p.addLine(to: pt(7.3620, 14.2210))
+        p.addCurve(to: pt(7.3547, 14.8574), control1: pt(7.2461, 14.4166), control2: pt(7.2433, 14.6592))
+        p.addCurve(to: pt(7.9022, 15.1819), control1: pt(7.4662, 15.0556), control2: pt(7.6749, 15.1793))
+        p.addCurve(to: pt(8.4570, 14.8700), control1: pt(8.1296, 15.1845), control2: pt(8.3411, 15.0656))
+        p.addLine(to: pt(9.9110, 12.4150))
+        p.addCurve(to: pt(9.9160, 11.7750), control1: pt(10.0277, 12.2181), control2: pt(10.0296, 11.9737))
+        p.addLine(to: pt(8.4620, 9.2300))
+        p.closeSubpath()
         return p
     }
 }
