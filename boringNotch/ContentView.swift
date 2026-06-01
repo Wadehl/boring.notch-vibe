@@ -294,8 +294,13 @@ struct ContentView: View {
                       } else if !coordinator.expandingView.show && vm.notchState == .closed && (!musicManager.isPlaying && musicManager.isPlayerIdle) && Defaults[.showNotHumanFace] && !vm.hideOnClosed  {
                           BoringFaceAnimation()
                        } else if vm.notchState == .closed && !agentManager.activeSessions.isEmpty && !vm.hideOnClosed {
-                           AgentClosedNotchView()
-                               .frame(width: vm.closedNotchSize.width - 20, height: vm.effectiveClosedNotchHeight)
+                           let screen = vm.screenUUID.flatMap { NSScreen.screen(withUUID: $0) } ?? NSScreen.main
+                           let hasNotch = (screen?.safeAreaInsets.top ?? 0) > 0
+                           AgentClosedNotchView(hasHardwareNotch: hasNotch)
+                               .frame(
+                                   width: hasNotch ? vm.closedNotchSize.width + 60 : vm.closedNotchSize.width - 20,
+                                   height: vm.effectiveClosedNotchHeight
+                               )
                                .transition(.opacity)
                        } else if vm.notchState == .open {
                            BoringHeader()
