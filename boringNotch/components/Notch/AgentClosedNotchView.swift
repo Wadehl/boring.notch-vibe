@@ -10,7 +10,7 @@ import SwiftUI
 private let clawdColor = Color(red: 217/255, green: 119/255, blue: 87/255)
 
 // Two walk frames: legs in alternating positions
-private enum ClawdFrame {
+fileprivate enum ClawdFrame {
     case a // neutral: all legs down
     case b // walk: left legs raised, right legs lowered (stagger)
 }
