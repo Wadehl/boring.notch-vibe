@@ -105,7 +105,6 @@ struct SettingsView: View {
                     }
                 case "AgentDebug":
                     AgentDebugView()
-                    }
                 default:
                     GeneralSettings()
                 }
