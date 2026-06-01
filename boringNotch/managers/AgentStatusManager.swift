@@ -25,6 +25,8 @@ struct AgentSession: Identifiable, Equatable {
     let app: AgentApp
     var status: AgentStatus
     var cwd: String?         // claude-code only
+    var sessionId: String?   // claude-code sessionId for summary lookup
+    var summary: String?     // latest user message as task summary
     var updatedAt: Date
 }
 
@@ -37,8 +39,14 @@ final class AgentStatusManager: ObservableObject {
 
     @Published private(set) var sessions: [AgentSession] = []
 
-    var hasActiveSessions: Bool {
-        sessions.contains { $0.status == .running }
+    /// Summary of the most recently active Claude Code session
+    var activeSessionSummary: String? {
+        sessions.first { $0.status == .running && $0.app == .claudeCode }?.summary
+        ?? sessions.first { $0.status == .idle && $0.app == .claudeCode }?.summary
+    }
+
+    var activeSessions: [AgentSession] {
+        sessions.filter { $0.status != .done }
     }
 
     // App runs in a sandbox so homeDirectoryForCurrentUser returns the container path.
@@ -127,6 +135,7 @@ final class AgentStatusManager: ObservableObject {
 
             let rawStatus = json["status"] as? String ?? ""
             let cwd = json["cwd"] as? String
+            let sessionId = json["sessionId"] as? String
             let updatedAtMs = json["updatedAt"] as? Double ?? 0
             let updatedAt = Date(timeIntervalSince1970: updatedAtMs / 1000)
 
@@ -139,16 +148,62 @@ final class AgentStatusManager: ObservableObject {
                 status = .idle
             }
 
+            let summary = sessionId.flatMap { readClaudeSummary(cwd: cwd, sessionId: $0) }
+
             updated.append(AgentSession(
                 id: String(pid),
                 app: .claudeCode,
                 status: status,
                 cwd: cwd,
+                sessionId: sessionId,
+                summary: summary,
                 updatedAt: updatedAt
             ))
         }
 
         updateSessions(removing: .claudeCode, with: updated)
+    }
+
+    /// Reads the latest user message from the session JSONL as a task summary.
+    private func readClaudeSummary(cwd: String?, sessionId: String) -> String? {
+        // Session JSONL lives at ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl
+        guard let cwd else { return nil }
+        let encodedCwd = cwd.replacingOccurrences(of: "/", with: "-")
+        let projectDir = Self.realHomeURL
+            .appendingPathComponent(".claude/projects")
+            .appendingPathComponent(encodedCwd)
+        let jsonlFile = projectDir.appendingPathComponent("\(sessionId).jsonl")
+
+        guard let content = try? String(contentsOf: jsonlFile, encoding: .utf8) else { return nil }
+
+        var lastUserText: String?
+        for line in content.components(separatedBy: "\n").reversed() {
+            guard !line.isEmpty,
+                  let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  json["type"] as? String == "user",
+                  let message = json["message"] as? [String: Any],
+                  let contentVal = message["content"]
+            else { continue }
+
+            var text = ""
+            if let str = contentVal as? String {
+                text = str
+            } else if let arr = contentVal as? [[String: Any]] {
+                text = arr.compactMap { c -> String? in
+                    guard c["type"] as? String == "text" else { return nil }
+                    return c["text"] as? String
+                }.joined(separator: " ")
+            }
+
+            // Skip image-only messages
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty && !trimmed.hasPrefix("[Image") {
+                lastUserText = trimmed
+                break
+            }
+        }
+        return lastUserText.map { String($0.prefix(80)) }
     }
 
     // MARK: - Codex

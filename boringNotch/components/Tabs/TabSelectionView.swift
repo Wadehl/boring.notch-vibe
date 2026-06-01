@@ -25,7 +25,7 @@ struct TabSelectionView: View {
     @Namespace var animation
 
     private var hasActiveSessions: Bool {
-        !agentManager.sessions.filter { $0.status == .running || $0.status == .idle }.isEmpty
+        !agentManager.activeSessions.isEmpty
     }
 
     private var visibleTabs: [TabModel] {
