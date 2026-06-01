@@ -46,27 +46,20 @@ struct ClawdIcon: View {
             ctx.fill(r(0,  10.95, 3, 3.1), with: color)
             ctx.fill(r(21, 10.95, 3, 3.1), with: color)
 
-            // Four bottom legs with walk animation
-            // Frame A: legs 1&3 shift left 1px, legs 2&4 shift right 1px
-            // Frame B: legs 1&3 shift right 1px, legs 2&4 shift left 1px
+            // Four bottom legs: left pair (x=3,6) and right pair (x=15,18.512)
+            // Frame A: left pair shifts left -1, right pair shifts right +1 (splay out)
+            // Frame B: left pair shifts right +1, right pair shifts left -1 (tuck in)
             let baseY: CGFloat = 17.079
             let legH: CGFloat = 2.921
-            let shift: CGFloat = 1.0  // horizontal shift in SVG units
+            let shift: CGFloat = 1.0
 
-            let (x1, x2, x3, x4): (CGFloat, CGFloat, CGFloat, CGFloat)
-            switch walkFrame {
-            case .a:
-                x1 = 3      - shift; x2 = 6      + shift
-                x3 = 15     - shift; x4 = 18.512 + shift
-            case .b:
-                x1 = 3      + shift; x2 = 6      - shift
-                x3 = 15     + shift; x4 = 18.512 - shift
-            }
+            let leftShift:  CGFloat = walkFrame == .a ? -shift : +shift
+            let rightShift: CGFloat = walkFrame == .a ? +shift : -shift
 
-            ctx.fill(r(x1, baseY, 1.488, legH), with: color)
-            ctx.fill(r(x2, baseY, 1.488, legH), with: color)
-            ctx.fill(r(x3, baseY, 1.488, legH), with: color)
-            ctx.fill(r(x4, baseY, 1.488, legH), with: color)
+            ctx.fill(r(3      + leftShift,  baseY, 1.488, legH), with: color)
+            ctx.fill(r(6      + leftShift,  baseY, 1.488, legH), with: color)
+            ctx.fill(r(15     + rightShift, baseY, 1.488, legH), with: color)
+            ctx.fill(r(18.512 + rightShift, baseY, 1.488, legH), with: color)
         }
         .frame(width: size, height: size)
         .compositingGroup()
