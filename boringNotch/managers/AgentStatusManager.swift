@@ -26,7 +26,7 @@ struct AgentSession: Identifiable, Equatable {
     var status: AgentStatus
     var cwd: String?         // claude-code only
     var sessionId: String?   // claude-code sessionId for summary lookup
-    var summary: String?     // latest user message as task summary
+    var summary: String?     // session title / first prompt
     var updatedAt: Date
 }
 
@@ -43,6 +43,8 @@ final class AgentStatusManager: ObservableObject {
     var activeSessionSummary: String? {
         sessions.first { $0.status == .running && $0.app == .claudeCode }?.summary
         ?? sessions.first { $0.status == .idle && $0.app == .claudeCode }?.summary
+        ?? sessions.first { $0.status == .running }?.summary
+        ?? sessions.first { $0.status == .idle }?.summary
     }
 
     var activeSessions: [AgentSession] {
@@ -60,6 +62,7 @@ final class AgentStatusManager: ObservableObject {
 
     private let claudeSessionsDir: URL
     private let codexLogsDB: URL
+    private let codexSessionIndex: URL
 
     // DispatchSource watching ~/.claude/sessions/ for file changes
     private var claudeDirSource: DispatchSourceFileSystemObject?
@@ -79,6 +82,7 @@ final class AgentStatusManager: ObservableObject {
         let home = Self.realHomeURL
         claudeSessionsDir = home.appendingPathComponent(".claude/sessions")
         codexLogsDB = home.appendingPathComponent(".codex/logs_2.sqlite")
+        codexSessionIndex = home.appendingPathComponent(".codex/session_index.jsonl")
         startClaudeWatcher()
         startCodexPoller()
     }
@@ -148,7 +152,11 @@ final class AgentStatusManager: ObservableObject {
                 status = .idle
             }
 
-            let summary = sessionId.flatMap { readClaudeSummary(cwd: cwd, sessionId: $0) }
+            // Try sessions-index.json firstPrompt first, fall back to JSONL last user message
+            let summary = sessionId.flatMap { sid in
+                readClaudeSessionTitle(cwd: cwd, sessionId: sid)
+                ?? readClaudeSummary(cwd: cwd, sessionId: sid)
+            }
 
             updated.append(AgentSession(
                 id: String(pid),
@@ -164,9 +172,36 @@ final class AgentStatusManager: ObservableObject {
         updateSessions(removing: .claudeCode, with: updated)
     }
 
-    /// Reads the latest user message from the session JSONL as a task summary.
+    /// Reads the session title from sessions-index.json (firstPrompt field), stripping XML tags.
+    private func readClaudeSessionTitle(cwd: String?, sessionId: String) -> String? {
+        guard let cwd else { return nil }
+        let encodedCwd = cwd.replacingOccurrences(of: "/", with: "-")
+        let indexFile = Self.realHomeURL
+            .appendingPathComponent(".claude/projects")
+            .appendingPathComponent(encodedCwd)
+            .appendingPathComponent("sessions-index.json")
+
+        guard
+            let data = try? Data(contentsOf: indexFile),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let entries = json["entries"] as? [[String: Any]],
+            let entry = entries.first(where: { $0["sessionId"] as? String == sessionId }),
+            let firstPrompt = entry["firstPrompt"] as? String
+        else { return nil }
+
+        // Strip leading XML-style tags like <ide_selection>...</ide_selection>
+        var cleaned = firstPrompt
+        while cleaned.hasPrefix("<"), let close = cleaned.range(of: ">") {
+            cleaned = String(cleaned[close.upperBound...]).trimmingCharacters(in: .whitespaces)
+        }
+        // Also strip trailing ellipsis marker
+        if cleaned.hasSuffix("…") { cleaned = String(cleaned.dropLast()) }
+        let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : String(trimmed.prefix(80))
+    }
+
+    /// Reads the latest user message from the session JSONL as a task summary (fallback).
     private func readClaudeSummary(cwd: String?, sessionId: String) -> String? {
-        // Session JSONL lives at ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl
         guard let cwd else { return nil }
         let encodedCwd = cwd.replacingOccurrences(of: "/", with: "-")
         let projectDir = Self.realHomeURL
@@ -196,7 +231,6 @@ final class AgentStatusManager: ObservableObject {
                 }.joined(separator: " ")
             }
 
-            // Skip image-only messages
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty && !trimmed.hasPrefix("[Image") {
                 lastUserText = trimmed
@@ -222,7 +256,6 @@ final class AgentStatusManager: ObservableObject {
         let dbPath = codexLogsDB.path
         var db: OpaquePointer?
 
-        // Open read-only
         guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK else {
             return
         }
@@ -250,11 +283,12 @@ final class AgentStatusManager: ObservableObject {
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return }
         defer { sqlite3_finalize(statement) }
 
+        // Load Codex thread names once per refresh
+        let threadNames = readCodexThreadNames()
+
         var updated: [AgentSession] = []
         while sqlite3_step(statement) == SQLITE_ROW {
-            guard
-                let tidPtr = sqlite3_column_text(statement, 0)
-            else { continue }
+            guard let tidPtr = sqlite3_column_text(statement, 0) else { continue }
 
             let tid = String(cString: tidPtr)
             let lastTs = sqlite3_column_int64(statement, 1)
@@ -265,11 +299,31 @@ final class AgentStatusManager: ObservableObject {
                 app: .codex,
                 status: status,
                 cwd: nil,
+                sessionId: tid,
+                summary: threadNames[tid],
                 updatedAt: Date(timeIntervalSince1970: TimeInterval(lastTs))
             ))
         }
 
         updateSessions(removing: .codex, with: updated)
+    }
+
+    /// Reads ~/.codex/session_index.jsonl and returns a [threadId: threadName] map.
+    private func readCodexThreadNames() -> [String: String] {
+        guard let content = try? String(contentsOf: codexSessionIndex, encoding: .utf8) else {
+            return [:]
+        }
+        var map: [String: String] = [:]
+        for line in content.components(separatedBy: "\n") {
+            guard !line.isEmpty,
+                  let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let id = json["id"] as? String,
+                  let name = json["thread_name"] as? String
+            else { continue }
+            map[id] = name
+        }
+        return map
     }
 
     // MARK: - Helpers
@@ -278,7 +332,6 @@ final class AgentStatusManager: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             var kept = self.sessions.filter { $0.app != app }
-            // Drop "done" claude sessions after a short grace period (they've already exited)
             let visible = newSessions.filter { $0.status != .done || $0.app == .claudeCode }
             kept.append(contentsOf: visible)
             self.sessions = kept

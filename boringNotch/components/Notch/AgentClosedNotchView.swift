@@ -120,21 +120,21 @@ struct AgentClosedNotchView: View {
 
     var body: some View {
         if hasHardwareNotch {
-            // On notch screens: push icon left and count right, hide middle text under hardware notch
+            // On notch screens: push icon left and count right, hardware notch hides middle
             HStack(spacing: 0) {
-                ClawdWalkingIcon(size: 18)
-                    .padding(.leading, 6)
+                ClawdWalkingIcon(size: 16)
+                    .padding(.leading, 4)
 
                 Spacer()
 
                 Text("\(count)")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 7)
+                    .padding(.horizontal, 5)
                     .padding(.vertical, 2)
                     .background(Color.white.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .padding(.trailing, 6)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .padding(.trailing, 4)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {

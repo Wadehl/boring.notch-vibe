@@ -31,7 +31,7 @@ struct TabSelectionView: View {
     private var visibleTabs: [TabModel] {
         var t = baseTabs
         if hasActiveSessions {
-            t.append(TabModel(label: "AI", icon: "cpu", view: .agentStatus))
+            t.append(TabModel(label: "AI", icon: "square.stack.3d.up.fill", view: .agentStatus))
         }
         return t
     }
@@ -61,9 +61,13 @@ struct TabSelectionView: View {
             }
         }
         .clipShape(Capsule())
+        .onAppear {
+            if hasActiveSessions && coordinator.currentView != .agentStatus {
+                coordinator.currentView = .agentStatus
+            }
+        }
         .onChange(of: hasActiveSessions) { _, active in
             withAnimation(.smooth) {
-                // Auto-switch to AI tab when sessions become active
                 if active {
                     coordinator.currentView = .agentStatus
                 } else if coordinator.currentView == .agentStatus {

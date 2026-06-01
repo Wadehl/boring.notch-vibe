@@ -37,6 +37,7 @@
 		<string>/.codex/logs_2.sqlite</string>
 		<string>/.codex/logs_2.sqlite-shm</string>
 		<string>/.codex/logs_2.sqlite-wal</string>
+		<string>/.codex/session_index.jsonl</string>
 	</array>
 </dict>
 </plist>
