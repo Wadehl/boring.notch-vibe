@@ -10,12 +10,13 @@ struct AgentStatusView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(manager.sessions) { session in
+            ForEach(manager.sessions.filter { $0.status != .done }) { session in
                 AgentSessionRow(session: session)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
