@@ -12,9 +12,9 @@ private let claudeColor = Color(red: 217/255, green: 119/255, blue: 87/255)
 // Codex gradient: top #B1A7FF → mid #7A9DFF → bottom #3941FF
 private let codexGradient = LinearGradient(
     stops: [
-        .init(color: Color(red: 177/255, green: 167/255, blue: 1.0),    offset: 0.0),
-        .init(color: Color(red: 122/255, green: 157/255, blue: 1.0),    offset: 0.5),
-        .init(color: Color(red:  57/255, green:  65/255, blue: 1.0),    offset: 1.0),
+        .init(color: Color(red: 177/255, green: 167/255, blue: 1.0),    location: 0.0),
+        .init(color: Color(red: 122/255, green: 157/255, blue: 1.0),    location: 0.5),
+        .init(color: Color(red:  57/255, green:  65/255, blue: 1.0),    location: 1.0),
     ],
     startPoint: .top,
     endPoint: .bottom
@@ -199,7 +199,7 @@ struct AgentSessionRow: View {
     private var appColor: Color {
         switch session.app {
         case .claudeCode: return claudeColor
-        case .codex: return codexColor
+        case .codex: return Color(red: 177/255, green: 167/255, blue: 1.0)
         }
     }
 
