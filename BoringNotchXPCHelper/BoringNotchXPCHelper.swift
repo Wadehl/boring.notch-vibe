@@ -9,6 +9,7 @@ import Foundation
 import ApplicationServices
 import IOKit
 import CoreGraphics
+import AppKit
 
 class BoringNotchXPCHelper: NSObject, BoringNotchXPCHelperProtocol {
     
@@ -173,6 +174,138 @@ class BoringNotchXPCHelper: NSObject, BoringNotchXPCHelperProtocol {
             IOObjectRelease(service)
         }
         return nil
+    }
+
+    @objc func sendKeystrokes(keyCodes: [Int32], keystrokeText: String?, targetPid: Int32, with reply: @escaping (Bool, String?) -> Void) {
+
+        func postKey(_ keyCode: CGKeyCode, down: Bool) {
+            let src = CGEventSource(stateID: .hidSystemState)
+            let evt = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: down)
+            if targetPid > 0 {
+                evt?.postToPid(targetPid)
+            } else {
+                evt?.post(tap: .cghidEventTap)
+            }
+        }
+
+        func postChar(_ char: Character) {
+            var utf16 = Array(String(char).utf16)
+            let src = CGEventSource(stateID: .hidSystemState)
+            if let down = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: true) {
+                down.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
+                if targetPid > 0 { down.postToPid(targetPid) } else { down.post(tap: .cghidEventTap) }
+            }
+            if let up = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: false) {
+                up.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
+                if targetPid > 0 { up.postToPid(targetPid) } else { up.post(tap: .cghidEventTap) }
+            }
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+
+        if let text = keystrokeText {
+            for char in text { postChar(char) }
+            // Return key (keyCode 36)
+            postKey(36, down: true)
+            postKey(36, down: false)
+        } else {
+            for code in keyCodes {
+                let keyCode = CGKeyCode(code)
+                postKey(keyCode, down: true)
+                postKey(keyCode, down: false)
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+        }
+
+        reply(true, nil)
+    }
+
+    @objc func writeToTty(_ ttyPath: String, byte: Int32, with reply: @escaping (Bool, String?) -> Void) {
+        let fd = Darwin.open(ttyPath, O_WRONLY | O_NOCTTY | O_NONBLOCK)
+        guard fd >= 0 else {
+            reply(false, "open failed: \(String(cString: strerror(errno)))")
+            return
+        }
+        defer { Darwin.close(fd) }
+        var b = UInt8(byte & 0xFF)
+        let written = Darwin.write(fd, &b, 1)
+        if written == 1 {
+            reply(true, nil)
+        } else {
+            reply(false, "write failed: \(String(cString: strerror(errno)))")
+        }
+    }
+
+    @objc func activateAndSendKey(bundleId: String, keyCode: Int32, delayMs: Int32, with reply: @escaping (Bool, String?) -> Void) {
+        let appName: String
+        switch bundleId {
+        case "com.apple.Terminal": appName = "Terminal"
+        case "com.googlecode.iterm2": appName = "iTerm2"
+        default: appName = bundleId
+        }
+
+        let script = """
+        tell application "\(appName)"
+            activate
+        end tell
+        delay \(Double(delayMs) / 1000.0)
+        tell application "System Events"
+            tell process "\(appName)"
+                keystroke "\(keyCode)"
+            end tell
+        end tell
+        """
+
+        // Map keyCode back to character for keystroke
+        let keyCharMap: [Int32: String] = [18:"1",19:"2",20:"3",21:"4",23:"5",22:"6",26:"7",28:"8",25:"9"]
+        let keystrokeChar = keyCharMap[keyCode] ?? "1"
+
+        let finalScript = """
+        tell application "\(appName)"
+            activate
+        end tell
+        delay \(Double(delayMs) / 1000.0)
+        tell application "System Events"
+            tell process "\(appName)"
+                keystroke "\(keystrokeChar)"
+            end tell
+        end tell
+        """
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", finalScript]
+        let pipe = Pipe()
+        process.standardError = pipe
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let errData = pipe.fileHandleForReading.readDataToEndOfFile()
+            let errStr = String(data: errData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if process.terminationStatus == 0 {
+                reply(true, nil)
+            } else {
+                reply(false, errStr.isEmpty ? "osascript failed" : errStr)
+            }
+        } catch {
+            reply(false, error.localizedDescription)
+        }
+    }
+
+
+    @objc func runAppleScript(_ source: String, with reply: @escaping (Bool, String?) -> Void) {
+        guard let script = NSAppleScript(source: source) else {
+            reply(false, "Failed to create NSAppleScript")
+            return
+        }
+        var errorDict: NSDictionary?
+        script.executeAndReturnError(&errorDict)
+        if let err = errorDict {
+            let msg = err[NSAppleScript.errorMessage] as? String ?? err.description
+            print("[XPCHelper] AppleScript error: \(err)")
+            reply(false, msg)
+        } else {
+            reply(true, nil)
+        }
     }
 
     // MARK: - Helper handle for private framework

@@ -201,6 +201,9 @@
         }
       }
     },
+    "· click to jump" : {
+
+    },
     "'Now Playing' was the only option on previous versions and works with all media apps." : {
       "localizations" : {
         "ar" : {
@@ -697,6 +700,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "%@"
+          }
+        }
+      }
+    },
+    "%@  ·  %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@  ·  %2$@"
           }
         }
       }
@@ -1701,6 +1714,9 @@
         }
       }
     },
+    "Active Sessions (%lld)" : {
+
+    },
     "Add" : {
       "localizations" : {
         "ar" : {
@@ -2201,6 +2217,12 @@
           }
         }
       }
+    },
+    "Agent Debug" : {
+
+    },
+    "Agent Status Debug" : {
+
     },
     "All-day" : {
       "localizations" : {
@@ -5202,6 +5224,9 @@
         }
       }
     },
+    "Claude Session Files" : {
+
+    },
     "Clear slot" : {
       "localizations" : {
         "ar" : {
@@ -7002,6 +7027,12 @@
         }
       }
     },
+    "cwd: %@" : {
+
+    },
+    "Data Sources" : {
+
+    },
     "Default" : {
       "localizations" : {
         "ar" : {
@@ -7202,6 +7233,9 @@
           }
         }
       }
+    },
+    "Directory exists but is empty" : {
+
     },
     "Disable" : {
       "extractionState" : "stale",
@@ -9106,6 +9140,9 @@
           }
         }
       }
+    },
+    "Error: %@" : {
+
     },
     "Expanded drag detection area" : {
       "localizations" : {
@@ -15010,6 +15047,9 @@
         }
       }
     },
+    "No sessions detected" : {
+
+    },
     "Not Now" : {
       "localizations" : {
         "ar" : {
@@ -16210,6 +16250,16 @@
         }
       }
     },
+    "pid: %lld  status: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "pid: %1$lld  status: %2$@"
+          }
+        }
+      }
+    },
     "Plugged In" : {
       "localizations" : {
         "ar" : {
@@ -16909,6 +16959,9 @@
           }
         }
       }
+    },
+    "Refresh" : {
+
     },
     "Release name" : {
       "localizations" : {
@@ -23614,6 +23667,9 @@
           }
         }
       }
+    },
+    "点击选项自动回复 · 点击卡片切换到终端" : {
+
     }
   },
   "version" : "1.0"

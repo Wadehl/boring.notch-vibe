@@ -132,8 +132,8 @@ struct ContentView: View {
                     .onHover { hovering in
                         handleHover(hovering)
                     }
-                    .onTapGesture {
-                        doOpen()
+                    .conditionalModifier(vm.notchState == .closed) { view in
+                        view.onTapGesture { doOpen() }
                     }
                     .conditionalModifier(Defaults[.enableGestures]) { view in
                         view
@@ -154,7 +154,7 @@ struct ContentView: View {
                                 try? await Task.sleep(for: .milliseconds(100))
                                 guard !Task.isCancelled else { return }
                                 await MainActor.run {
-                                    if self.vm.notchState == .open && !self.isHovering && !self.vm.isBatteryPopoverActive && !SharingStateManager.shared.preventNotchClose {
+                                    if self.vm.notchState == .open && !self.isHovering && !self.vm.isBatteryPopoverActive && !SharingStateManager.shared.preventNotchClose && self.agentManager.pendingInteraction == nil {
                                         self.vm.close()
                                     }
                                 }
@@ -169,13 +169,13 @@ struct ContentView: View {
                         }
                     }
                     .onChange(of: vm.isBatteryPopoverActive) {
-                        if !vm.isBatteryPopoverActive && !isHovering && vm.notchState == .open && !SharingStateManager.shared.preventNotchClose {
+                        if !vm.isBatteryPopoverActive && !isHovering && vm.notchState == .open && !SharingStateManager.shared.preventNotchClose && agentManager.pendingInteraction == nil {
                             hoverTask?.cancel()
                             hoverTask = Task {
                                 try? await Task.sleep(for: .milliseconds(100))
                                 guard !Task.isCancelled else { return }
                                 await MainActor.run {
-                                    if !self.vm.isBatteryPopoverActive && !self.isHovering && self.vm.notchState == .open && !SharingStateManager.shared.preventNotchClose {
+                                    if !self.vm.isBatteryPopoverActive && !self.isHovering && self.vm.notchState == .open && !SharingStateManager.shared.preventNotchClose && self.agentManager.pendingInteraction == nil {
                                         self.vm.close()
                                     }
                                 }
@@ -215,6 +215,11 @@ struct ContentView: View {
         .background(dragDetector)
         .preferredColorScheme(.dark)
         .environmentObject(vm)
+        .onChange(of: agentManager.pendingInteraction) { _, interaction in
+            if interaction != nil && vm.notchState == .closed {
+                withAnimation(.smooth) { vm.open() }
+            }
+        }
         .onChange(of: vm.anyDropZoneTargeting) { _, isTargeted in
             anyDropDebounceTask?.cancel()
 
@@ -302,10 +307,12 @@ struct ContentView: View {
                                    height: vm.effectiveClosedNotchHeight
                                )
                                .transition(.opacity)
-                       } else if vm.notchState == .open {
+                       } else if vm.notchState == .open && agentManager.pendingInteraction == nil {
                            BoringHeader()
                                .frame(height: max(24, vm.effectiveClosedNotchHeight))
                                .opacity(gestureProgress != 0 ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3) : 1.0)
+                       } else if vm.notchState == .open {
+                           Rectangle().fill(.clear).frame(height: vm.effectiveClosedNotchHeight)
                        } else {
                            Rectangle().fill(.clear).frame(width: vm.closedNotchSize.width - 20, height: vm.effectiveClosedNotchHeight)
                        }
@@ -351,16 +358,20 @@ struct ContentView: View {
                   view
                       .fixedSize()
               }
-              .zIndex(2)
+              .zIndex(vm.notchState == .open ? 1 : 2)
             if vm.notchState == .open {
                 VStack {
-                    switch coordinator.currentView {
-                    case .home:
-                        NotchHomeView(albumArtNamespace: albumArtNamespace)
-                    case .shelf:
-                        ShelfView()
-                    case .agentStatus:
-                        AgentStatusView()
+                    if let interaction = agentManager.pendingInteraction {
+                        AgentInteractionView(interaction: interaction)
+                    } else {
+                        switch coordinator.currentView {
+                        case .home:
+                            NotchHomeView(albumArtNamespace: albumArtNamespace)
+                        case .shelf:
+                            ShelfView()
+                        case .agentStatus:
+                            AgentStatusView()
+                        }
                     }
                 }
                 .transition(
@@ -368,7 +379,7 @@ struct ContentView: View {
                     .combined(with: .opacity)
                     .animation(.smooth(duration: 0.35))
                 )
-                .zIndex(1)
+                .zIndex(vm.notchState == .open ? 2 : 1)
                 .allowsHitTesting(vm.notchState == .open)
                 .opacity(gestureProgress != 0 ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3) : 1.0)
             }
@@ -561,15 +572,13 @@ struct ContentView: View {
                         self.isHovering = false
                     }
                     
-                    if self.vm.notchState == .open && !self.vm.isBatteryPopoverActive && !SharingStateManager.shared.preventNotchClose {
+                    if self.vm.notchState == .open && !self.vm.isBatteryPopoverActive && !SharingStateManager.shared.preventNotchClose && self.agentManager.pendingInteraction == nil {
                         self.vm.close()
                     }
                 }
             }
         }
     }
-
-    // MARK: - Gesture Handling
 
     private func handleDownGesture(translation: CGFloat, phase: NSEvent.Phase) {
         guard vm.notchState == .closed else { return }

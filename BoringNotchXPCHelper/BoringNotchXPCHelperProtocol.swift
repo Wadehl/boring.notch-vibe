@@ -20,6 +20,13 @@ import Foundation
     func isScreenBrightnessAvailable(with reply: @escaping (Bool) -> Void)
     func currentScreenBrightness(with reply: @escaping (NSNumber?) -> Void)
     func setScreenBrightness(_ value: Float, with reply: @escaping (Bool) -> Void)
+    // Send keystrokes to frontmost app via CGEvent (requires Accessibility, no sandbox)
+    // keyCodes: array of CGKeyCode values to press in sequence; if keystrokeText is non-nil,
+    // type it as individual characters instead.
+    func sendKeystrokes(keyCodes: [Int32], keystrokeText: String?, targetPid: Int32, with reply: @escaping (Bool, String?) -> Void)
+    // Run an AppleScript source string (no Accessibility required)
+    func runAppleScript(_ source: String, with reply: @escaping (Bool, String?) -> Void)
+    func writeToTty(_ ttyPath: String, byte: Int32, with reply: @escaping (Bool, String?) -> Void)
 }
 
 /*

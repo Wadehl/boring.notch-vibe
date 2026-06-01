@@ -46,7 +46,6 @@ private struct ClaudeAppIcon: View {
     }
 }
 
-// Codex icon: precisely converted from official SVG path (arc→bezier, fill-rule=evenodd)
 private struct CodexShape: Shape {
     func path(in rect: CGRect) -> Path {
         let s = min(rect.width, rect.height) / 24.0
@@ -133,13 +132,15 @@ struct AgentStatusView: View {
     @ObservedObject var manager = AgentStatusManager.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(manager.sessions.filter { $0.status != .done }) { session in
-                AgentSessionRow(session: session)
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(manager.sessions.filter { $0.status != .done }) { session in
+                    AgentSessionRow(session: session)
+                }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
@@ -149,78 +150,114 @@ struct AgentStatusView: View {
 struct AgentSessionRow: View {
     let session: AgentSession
     @State private var spinnerRotation: Double = 0
+    @State private var isHovering = false
+    @ObservedObject private var manager = AgentStatusManager.shared
 
     var body: some View {
-        HStack(spacing: 8) {
-            // App icon
-            ZStack {
-                Circle()
-                    .fill(appColor.opacity(0.15))
-                    .frame(width: 28, height: 28)
-                Group {
-                    if session.app == .claudeCode {
-                        ClaudeAppIcon()
-                    } else {
-                        CodexAppIcon()
+        Button(action: focusTerminal) {
+            HStack(spacing: 10) {
+                // App icon with spinner
+                ZStack {
+                    Circle()
+                        .fill(appColor.opacity(0.12))
+                        .frame(width: 30, height: 30)
+                    Group {
+                        if session.app == .claudeCode {
+                            ClaudeAppIcon()
+                        } else {
+                            CodexAppIcon()
+                        }
+                    }
+                    .frame(width: 17, height: 17)
+
+                    if session.status == .running {
+                        Circle()
+                            .trim(from: 0, to: 0.7)
+                            .stroke(appColor.opacity(0.7), lineWidth: 1.5)
+                            .frame(width: 28, height: 28)
+                            .rotationEffect(.degrees(spinnerRotation))
+                            .onAppear {
+                                withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+                                    spinnerRotation = 360
+                                }
+                            }
                     }
                 }
-                .frame(width: 16, height: 16)
 
-                // Running indicator ring
-                if session.status == .running {
-                    Circle()
-                        .trim(from: 0, to: 0.7)
-                        .stroke(appColor.opacity(0.8), lineWidth: 1.5)
-                        .frame(width: 26, height: 26)
-                        .rotationEffect(.degrees(spinnerRotation))
-                        .onAppear {
-                            withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
-                                spinnerRotation = 360
-                            }
-                        }
-                }
-            }
-
-            // Text
-            VStack(alignment: .leading, spacing: 1) {
-                if let summary = session.summary {
-                    Text(summary)
-                        .font(.system(size: 11, weight: .medium))
+                // Text block
+                VStack(alignment: .leading, spacing: 2) {
+                    // Title
+                    Text(session.summary ?? appLabel)
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.white.opacity(0.9))
                         .lineLimit(1)
-                        .truncationMode(.tail)
-                } else {
-                    Text(appLabel)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.9))
+
+                    // Last user message
+                    if let msg = session.lastUserMessage ?? session.cwd.map({ URL(fileURLWithPath: $0).lastPathComponent }) {
+                        Text(msg)
+                            .font(.system(size: 10))
+                            .foregroundColor(.gray.opacity(0.7))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+
+                    // Status line
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(statusColor)
+                            .frame(width: 5, height: 5)
+                        Text(statusLabel)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(statusColor)
+                        if isHovering {
+                            Text("· click to jump")
+                                .font(.system(size: 10))
+                                .foregroundColor(.gray.opacity(0.5))
+                                .transition(.opacity)
+                        }
+                    }
+                    .animation(.easeInOut(duration: 0.15), value: isHovering)
                 }
-                Text(subtitleText)
-                    .font(.system(size: 10))
-                    .foregroundColor(.gray)
+
+                Spacer()
+
+                // Right column: terminal tag + duration
+                VStack(alignment: .trailing, spacing: 4) {
+                    if let terminal = session.terminalAppName {
+                        Text(terminal)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.white.opacity(0.5))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.white.opacity(0.08))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                    Text(duration)
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        .foregroundColor(.gray.opacity(0.5))
+                }
             }
-
-            Spacer()
-
-            // Status badge
-            Text(statusLabel)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(statusColor.opacity(0.9))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(statusColor.opacity(0.15))
-                .clipShape(Capsule())
+            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.white.opacity(isHovering ? 0.06 : 0.03))
+                    .animation(.easeInOut(duration: 0.15), value: isHovering)
+            )
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 5)
-        .padding(.horizontal, 8)
-        .background(Color.white.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .cursor(.pointingHand)
     }
 
-    private var subtitleText: String {
-        if let cwd = session.cwd {
-            return URL(fileURLWithPath: cwd).lastPathComponent
+    private func focusTerminal() {
+        print("[AgentSessionRow] focusTerminal tapped, session.id=\(session.id)")
+        if let pid = Int(session.id) {
+            manager.focusTerminal(claudePid: pid)
+        } else {
+            print("[AgentSessionRow] ERROR: could not parse pid from session.id=\(session.id)")
         }
-        return appLabel
     }
 
     private var appLabel: String {
@@ -239,9 +276,9 @@ struct AgentSessionRow: View {
 
     private var statusLabel: String {
         switch session.status {
-        case .running: return "running"
-        case .idle:    return "waiting"
-        case .done:    return "done"
+        case .running: return "Running"
+        case .idle:    return "Idling"
+        case .done:    return "Done"
         }
     }
 
@@ -250,6 +287,24 @@ struct AgentSessionRow: View {
         case .running: return .green
         case .idle:    return .orange
         case .done:    return .gray
+        }
+    }
+
+    private var duration: String {
+        let elapsed = Date().timeIntervalSince(session.startedAt)
+        if elapsed < 60 { return "\(Int(elapsed))s" }
+        let mins = Int(elapsed / 60)
+        if mins < 60 { return "\(mins)m" }
+        return "\(mins / 60)h\(mins % 60)m"
+    }
+}
+
+// MARK: - Cursor modifier (shared with AgentInteractionView)
+
+extension View {
+    func cursor(_ cursor: NSCursor) -> some View {
+        self.onHover { inside in
+            if inside { cursor.push() } else { NSCursor.pop() }
         }
     }
 }

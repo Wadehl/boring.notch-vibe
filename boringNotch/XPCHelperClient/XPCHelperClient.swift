@@ -146,6 +146,49 @@ final class XPCHelperClient: NSObject {
         }
     }
     
+    // MARK: - Keystrokes (runs in unsandboxed helper via CGEvent)
+
+    nonisolated func sendKeystrokes(keyCodes: [Int32], keystrokeText: String?, targetPid: Int32) async -> (success: Bool, error: String?) {
+        do {
+            let service = await MainActor.run { ensureRemoteService() }
+            return try await service.withContinuation { service, continuation in
+                service.sendKeystrokes(keyCodes: keyCodes, keystrokeText: keystrokeText, targetPid: targetPid) { success, errorMsg in
+                    continuation.resume(returning: (success, errorMsg))
+                }
+            }
+        } catch {
+            return (false, error.localizedDescription)
+        }
+    }
+
+    nonisolated func writeToTty(_ ttyPath: String, byte: Int32) async -> (success: Bool, error: String?) {
+        do {
+            let service = await MainActor.run { ensureRemoteService() }
+            return try await service.withContinuation { service, continuation in
+                service.writeToTty(ttyPath, byte: byte) { success, errorMsg in
+                    continuation.resume(returning: (success, errorMsg))
+                }
+            }
+        } catch {
+            return (false, error.localizedDescription)
+        }
+    }
+
+    // MARK: - AppleScript (no Accessibility required)
+
+    nonisolated func runAppleScript(_ source: String) async -> (success: Bool, error: String?) {
+        do {
+            let service = await MainActor.run { ensureRemoteService() }
+            return try await service.withContinuation { service, continuation in
+                service.runAppleScript(source) { success, errorMsg in
+                    continuation.resume(returning: (success, errorMsg))
+                }
+            }
+        } catch {
+            return (false, error.localizedDescription)
+        }
+    }
+
     // MARK: - Keyboard Brightness
     
     nonisolated func isKeyboardBrightnessAvailable() async -> Bool {

@@ -19,6 +19,12 @@ struct ClawdIcon: View {
     let size: CGFloat
     fileprivate var walkFrame: ClawdFrame = .a
 
+    init(size: CGFloat) { self.size = size }
+    fileprivate init(size: CGFloat, walkFrame: ClawdFrame) {
+        self.size = size
+        self.walkFrame = walkFrame
+    }
+
     var body: some View {
         Canvas { ctx, canvasSize in
             let scale = canvasSize.width / 24.0

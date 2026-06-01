@@ -147,6 +147,7 @@
 		AA000002AA000002AA000002 /* AgentStatusManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AA000001AA000001 /* AgentStatusManager.swift */; };
 		AA000004AA000004AA000004 /* AgentStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000003AA000003AA000003 /* AgentStatusView.swift */; };
 		CC000002CC000002CC000002 /* AgentClosedNotchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000001CC000001CC000001 /* AgentClosedNotchView.swift */; };
+		DD000002DD000002DD000002 /* AgentInteractionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000001DD000001DD000001 /* AgentInteractionView.swift */; };
 
 /* End PBXBuildFile section */
 
@@ -318,6 +319,7 @@
 		AA000001AA000001AA000001 /* AgentStatusManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentStatusManager.swift; sourceTree = "<group>"; };
 		AA000003AA000003AA000003 /* AgentStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentStatusView.swift; sourceTree = "<group>"; };
 		CC000001CC000001CC000001 /* AgentClosedNotchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentClosedNotchView.swift; sourceTree = "<group>"; };
+		DD000001DD000001DD000001 /* AgentInteractionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInteractionView.swift; sourceTree = "<group>"; };
 
 /* End PBXFileReference section */
 
@@ -720,6 +722,7 @@
 				9AB0C6BB2C73C9CB00F7CD30 /* NotchHomeView.swift */,
 				AA000003AA000003AA000003 /* AgentStatusView.swift */,
 				CC000001CC000001CC000001 /* AgentClosedNotchView.swift */,
+				DD000001DD000001DD000001 /* AgentInteractionView.swift */,
 				14D570C52C5F38210011E668 /* BoringHeader.swift */,
 				14D570D12C5F6C6A0011E668 /* BoringExtrasMenu.swift */,
 				1471A8582C6281BD0058408D /* BoringNotchWindow.swift */,
@@ -1013,6 +1016,7 @@
 				AA000002AA000002AA000002 /* AgentStatusManager.swift in Sources */,
 				AA000004AA000004AA000004 /* AgentStatusView.swift in Sources */,
 				CC000002CC000002CC000002 /* AgentClosedNotchView.swift in Sources */,
+				DD000002DD000002DD000002 /* AgentInteractionView.swift in Sources */,
 				B10348D92C74E56000475897 /* ConditionalModifier.swift in Sources */,
 				118D1FD12E98FF5F00A2FF63 /* SharingStateManager.swift in Sources */,
 				14D570C22C5EAFBF0011E668 /* EmptyState.swift in Sources */,
