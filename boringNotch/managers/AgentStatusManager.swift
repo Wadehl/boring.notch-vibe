@@ -86,8 +86,8 @@ final class AgentStatusManager: ObservableObject {
     private func startClaudeWatcher() {
         let path = claudeSessionsDir.path
 
-        // Initial read
-        queue.async { [weak self] in self?.refreshClaudeSessions() }
+        // Initial read — hop to main actor explicitly to satisfy isolation
+        Task { @MainActor in self.refreshClaudeSessions() }
 
         // Watch the directory for any file changes
         let fd = Darwin.open(path, O_EVTONLY)
@@ -100,7 +100,7 @@ final class AgentStatusManager: ObservableObject {
             queue: queue
         )
         source.setEventHandler { [weak self] in
-            self?.refreshClaudeSessions()
+            Task { @MainActor [weak self] in self?.refreshClaudeSessions() }
         }
         source.resume()
         claudeDirSource = source

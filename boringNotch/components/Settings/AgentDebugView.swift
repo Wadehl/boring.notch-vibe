@@ -74,12 +74,14 @@ struct AgentDebugView: View {
                 Group {
                     Text("Claude Session Files").font(.headline)
                     let sessionDir = URL(fileURLWithPath: Self.realHome + "/.claude/sessions")
-                    let files = (try? FileManager.default.contentsOfDirectory(
-                        at: sessionDir, includingPropertiesForKeys: nil)) ?? []
-
-                    if files.isEmpty {
-                        Text("No session files found").foregroundColor(.secondary)
-                    } else {
+                    let result = Result { try FileManager.default.contentsOfDirectory(at: sessionDir, includingPropertiesForKeys: nil) }
+                    switch result {
+                    case .failure(let err):
+                        Text("Error: \(err.localizedDescription)")
+                            .font(.caption).foregroundColor(.red)
+                    case .success(let files) where files.isEmpty:
+                        Text("Directory exists but is empty").foregroundColor(.secondary)
+                    case .success(let files):
                         ForEach(files, id: \.path) { file in
                             if let data = try? Data(contentsOf: file),
                                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
