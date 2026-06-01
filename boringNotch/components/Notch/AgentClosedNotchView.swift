@@ -17,7 +17,7 @@ fileprivate enum ClawdFrame {
 
 struct ClawdIcon: View {
     let size: CGFloat
-    var frame: ClawdFrame = .a
+    var walkFrame: ClawdFrame = .a
 
     var body: some View {
         Canvas { ctx, canvasSize in
@@ -53,7 +53,7 @@ struct ClawdIcon: View {
             let legH: CGFloat = 2.921
 
             let (y1, h1, y2, h2, y3, h3, y4, h4): (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)
-            switch frame {
+            switch walkFrame {
             case .a:
                 // Neutral: all legs same
                 (y1, h1) = (baseY, legH)
@@ -86,7 +86,7 @@ struct ClawdWalkingIcon: View {
     @State private var pulse = false
 
     var body: some View {
-        ClawdIcon(size: size, frame: walkFrame)
+        ClawdIcon(size: size, walkFrame: walkFrame)
             .shadow(color: clawdColor.opacity(pulse ? 0.9 : 0.4), radius: pulse ? 8 : 4)
             .shadow(color: clawdColor.opacity(0.3), radius: 2)
             .onAppear {
