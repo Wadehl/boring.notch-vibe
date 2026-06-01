@@ -17,7 +17,7 @@ fileprivate enum ClawdFrame {
 
 struct ClawdIcon: View {
     let size: CGFloat
-    var walkFrame: ClawdFrame = .a
+    fileprivate var walkFrame: ClawdFrame = .a
 
     var body: some View {
         Canvas { ctx, canvasSize in
