@@ -298,7 +298,7 @@ struct ContentView: View {
                            let hasNotch = (screen?.safeAreaInsets.top ?? 0) > 0
                            AgentClosedNotchView(hasHardwareNotch: hasNotch)
                                .frame(
-                                   width: hasNotch ? vm.closedNotchSize.width + 24 : vm.closedNotchSize.width - 20,
+                                   width: hasNotch ? vm.closedNotchSize.width + 60 : vm.closedNotchSize.width - 20,
                                    height: vm.effectiveClosedNotchHeight
                                )
                                .transition(.opacity)

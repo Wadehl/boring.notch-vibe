@@ -110,8 +110,8 @@ struct AgentClosedNotchView: View {
     let hasHardwareNotch: Bool
     @ObservedObject var manager = AgentStatusManager.shared
 
-    private var summary: String {
-        manager.activeSessionSummary ?? "AI agents active"
+    private var summary: String? {
+        manager.activeSessionSummary
     }
 
     private var count: Int {
@@ -120,10 +120,9 @@ struct AgentClosedNotchView: View {
 
     var body: some View {
         if hasHardwareNotch {
-            // On notch screens: push icon left and count right, hardware notch hides middle
+            // On notch screens: icon flush-left, badge flush-right, notch covers the middle
             HStack(spacing: 0) {
                 ClawdWalkingIcon(size: 16)
-                    .padding(.leading, 4)
 
                 Spacer()
 
@@ -134,7 +133,6 @@ struct AgentClosedNotchView: View {
                     .padding(.vertical, 2)
                     .background(Color.white.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .padding(.trailing, 4)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -143,12 +141,16 @@ struct AgentClosedNotchView: View {
                 ClawdWalkingIcon(size: 18)
                     .padding(.leading, 4)
 
-                Text(summary)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.85))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let text = summary {
+                    Text(text)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.85))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Spacer()
+                }
 
                 Text("\(count)")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
