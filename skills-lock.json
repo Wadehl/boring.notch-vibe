@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "deep-wiki": {
+      "source": "smithery.ai",
+      "sourceType": "well-known",
+      "computedHash": "7df55b66acd5c814ad22425b14546bf741a88c699290111359f6cddf16dc7c25"
+    }
+  }
+}

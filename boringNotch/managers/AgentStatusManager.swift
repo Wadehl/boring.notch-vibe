@@ -347,21 +347,26 @@ final class AgentStatusManager: ObservableObject {
             // Fallback: permission prompt — only when JSONL found no interactive tool_use
             // and session JSON explicitly says status=waiting + waitingFor=permission prompt
             if sessionWaitingFor[pid] == "permission prompt" {
-                detectedInteraction = PendingInteraction(
-                    sessionId: session.sessionId ?? session.id,
-                    pid: pid,
-                    sessionSummary: session.summary,
-                    type: .permission,
-                    question: "Claude Code 请求执行一个工具操作",
-                    header: "Permission",
-                    options: [
-                        PendingInteractionOption(label: "允许", description: "Allow once", keystrokeText: "y"),
-                        PendingInteractionOption(label: "拒绝", description: "Deny", keystrokeText: "n"),
-                        PendingInteractionOption(label: "总是允许", description: "Always allow", keystrokeText: "a"),
-                    ],
-                    multiSelect: false,
-                    planTitle: nil
-                )
+                if let sid = session.sessionId, let cwd = session.cwd,
+                   let interaction = detectPermissionInteraction(cwd: cwd, sessionId: sid, pid: pid, sessionSummary: session.summary) {
+                    detectedInteraction = interaction
+                } else {
+                    // Last resort: no JSONL info available
+                    detectedInteraction = PendingInteraction(
+                        sessionId: session.sessionId ?? session.id,
+                        pid: pid,
+                        sessionSummary: session.summary,
+                        type: .permission,
+                        question: nil,
+                        header: nil,
+                        options: [
+                            PendingInteractionOption(label: "Yes", description: "Allow once", keystrokeText: "y"),
+                            PendingInteractionOption(label: "No", description: "Deny", keystrokeText: "n"),
+                        ],
+                        multiSelect: false,
+                        planTitle: nil
+                    )
+                }
                 break
             }
         }
@@ -543,6 +548,213 @@ final class AgentStatusManager: ObservableObject {
         }
 
         return nil
+    }
+
+    /// Scans the session JSONL to find the last unanswered tool_use and builds a
+    /// PendingInteraction for the permission prompt matching Claude Code's own option logic.
+    private func detectPermissionInteraction(cwd: String, sessionId: String, pid: Int, sessionSummary: String?) -> PendingInteraction? {
+        let encodedCwd = encodeCwd(cwd)
+        let jsonlFile = Self.realHomeURL
+            .appendingPathComponent(".claude/projects")
+            .appendingPathComponent(encodedCwd)
+            .appendingPathComponent("\(sessionId).jsonl")
+
+        guard let content = try? String(contentsOf: jsonlFile, encoding: .utf8) else { return nil }
+
+        let lines = content.components(separatedBy: "\n").filter { !$0.isEmpty }
+
+        var lastToolUse: (id: String, name: String, input: [String: Any])?
+        var respondedToolIds: Set<String> = []
+
+        for line in lines.reversed() {
+            guard let data = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { continue }
+
+            let msgType = obj["type"] as? String ?? ""
+
+            if msgType == "user" {
+                let message = obj["message"] as? [String: Any] ?? [:]
+                let msgContent = message["content"] as? [[String: Any]] ?? []
+                for item in msgContent {
+                    if item["type"] as? String == "tool_result",
+                       let tid = item["tool_use_id"] as? String {
+                        respondedToolIds.insert(tid)
+                    }
+                }
+            }
+
+            if msgType == "assistant" && lastToolUse == nil {
+                let message = obj["message"] as? [String: Any] ?? [:]
+                let msgContent = message["content"] as? [[String: Any]] ?? []
+                for item in msgContent {
+                    guard item["type"] as? String == "tool_use",
+                          let toolId = item["id"] as? String,
+                          let toolName = item["name"] as? String
+                    else { continue }
+                    let input = item["input"] as? [String: Any] ?? [:]
+                    lastToolUse = (id: toolId, name: toolName, input: input)
+                    break
+                }
+            }
+
+            if lastToolUse != nil { break }
+        }
+
+        guard let tool = lastToolUse, !respondedToolIds.contains(tool.id) else { return nil }
+
+        let options = permissionOptions(toolName: tool.name, input: tool.input, cwd: cwd)
+        let question = permissionQuestion(toolName: tool.name, input: tool.input)
+
+        return PendingInteraction(
+            sessionId: sessionId,
+            pid: pid,
+            sessionSummary: sessionSummary,
+            type: .permission,
+            question: question,
+            header: tool.name,
+            options: options,
+            multiSelect: false,
+            planTitle: nil
+        )
+    }
+
+    /// Builds permission option labels matching Claude Code's rK4 / fK4 logic exactly.
+    /// File tools (Write/Edit/Read/NotebookEdit) use rK4; Bash uses fK4.
+    private func permissionOptions(toolName: String, input: [String: Any], cwd: String) -> [PendingInteractionOption] {
+        let fileTools: Set<String> = ["Write", "Edit", "NotebookEdit", "Read"]
+        let bashTools: Set<String> = ["Bash"]
+
+        var opts: [PendingInteractionOption] = []
+        opts.append(PendingInteractionOption(label: "Yes", description: "Allow once", keystrokeText: "y"))
+
+        if toolName == "WebFetch" {
+            // WebFetch has its own permission UI: Yes / Yes, and don't ask again for <domain> / No
+            let url = input["url"] as? String ?? ""
+            if let host = URL(string: url)?.host, !host.isEmpty {
+                opts.append(PendingInteractionOption(
+                    label: "Yes, and don't ask again for \(host)",
+                    description: "Always allow this domain",
+                    keystrokeText: "a"
+                ))
+            }
+            opts.append(PendingInteractionOption(label: "No, and tell Claude what to do differently", description: "Deny", keystrokeText: "n"))
+        } else if fileTools.contains(toolName) {
+            let filePath = (input["file_path"] as? String) ?? (input["notebook_path"] as? String) ?? ""
+            let opType: String = toolName == "Read" ? "read" : "write"
+            let option2 = filePermissionOption2(filePath: filePath, operationType: opType, cwd: cwd)
+            opts.append(option2)
+            opts.append(PendingInteractionOption(label: "No", description: "Deny", keystrokeText: "n"))
+        } else if bashTools.contains(toolName) {
+            let command = input["command"] as? String ?? ""
+            if let option2 = bashPermissionOption2(command: command, cwd: cwd) {
+                opts.append(option2)
+            }
+            opts.append(PendingInteractionOption(label: "No", description: "Deny", keystrokeText: "n"))
+        } else {
+            opts.append(PendingInteractionOption(label: "No", description: "Deny", keystrokeText: "n"))
+        }
+
+        return opts
+    }
+
+    /// Mirrors rK4's option-2 logic for file-based tools.
+    private func filePermissionOption2(filePath: String, operationType: String, cwd: String) -> PendingInteractionOption {
+        let isRead = operationType == "read"
+
+        // Is file inside .claude/ config folder?
+        let homeStr = Self.realHomeURL.path
+        let claudeFolder = homeStr + "/.claude"
+        if filePath.hasPrefix(claudeFolder) && !isRead {
+            return PendingInteractionOption(
+                label: "Yes, and allow Claude to edit its own settings for this session",
+                description: "Accept session for .claude folder",
+                keystrokeText: "a"
+            )
+        }
+
+        // Is file inside cwd (working directory)?
+        let cwdNorm = cwd.hasSuffix("/") ? cwd : cwd + "/"
+        if filePath.hasPrefix(cwdNorm) || filePath == cwd {
+            if isRead {
+                return PendingInteractionOption(label: "Yes, during this session", description: "Allow all reads this session", keystrokeText: "a")
+            } else {
+                return PendingInteractionOption(label: "Yes, allow all edits during this session", description: "Allow all edits this session", keystrokeText: "a")
+            }
+        }
+
+        // File is outside cwd — show the directory name
+        let dir = (filePath as NSString).deletingLastPathComponent
+        let dirName = (dir as NSString).lastPathComponent.isEmpty ? dir : (dir as NSString).lastPathComponent
+        let displayDir = dirName.isEmpty ? "this directory" : dirName
+
+        if isRead {
+            return PendingInteractionOption(
+                label: "Yes, allow reading from \(displayDir)/ during this session",
+                description: "Allow reads from \(displayDir)",
+                keystrokeText: "a"
+            )
+        } else {
+            return PendingInteractionOption(
+                label: "Yes, allow all edits in \(displayDir)/ during this session",
+                description: "Allow all edits in \(displayDir)",
+                keystrokeText: "a"
+            )
+        }
+    }
+
+    /// Mirrors fK4 + Py6's option-2 logic for Bash.
+    /// Bash option 2 is only shown when Claude Code has generated "suggestions"
+    /// (addRules/addDirectories). We approximate this by detecting if the command
+    /// reads from outside cwd — the most common case that produces a suggestion.
+    private func bashPermissionOption2(command: String, cwd: String) -> PendingInteractionOption? {
+        // Extract the first meaningful path from the command that is outside cwd.
+        // Claude Code's actual logic calls an LLM to extract a command prefix;
+        // we use a heuristic: scan tokens for absolute paths outside cwd.
+        let tokens = command.components(separatedBy: .whitespaces)
+        let cwdNorm = cwd.hasSuffix("/") ? cwd : cwd + "/"
+
+        for token in tokens {
+            let t = token.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            guard t.hasPrefix("/"), !t.hasPrefix(cwdNorm), t != cwd else { continue }
+            let parentDir = (t as NSString).deletingLastPathComponent
+            let displayDir = (parentDir as NSString).lastPathComponent.isEmpty ? parentDir : (parentDir as NSString).lastPathComponent
+
+            // Mirrors: "Yes, allow reading from <dir>/ from this project"
+            return PendingInteractionOption(
+                label: "Yes, allow reading from \(displayDir)/ from this project",
+                description: "Allow reads from \(displayDir)",
+                keystrokeText: "a"
+            )
+        }
+
+        // No outside path found → no option 2 (Bash with no suggestions shows only Yes/No)
+        return nil
+    }
+
+    /// Builds a short question string summarising the tool call for display.
+    private func permissionQuestion(toolName: String, input: [String: Any]) -> String {
+        switch toolName {
+        case "Bash":
+            let cmd = (input["command"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let desc = input["description"] as? String
+            if let desc, !desc.isEmpty { return "\(desc): \(cmd)" }
+            return cmd.isEmpty ? "Bash command" : cmd
+        case "Write", "Edit", "NotebookEdit":
+            let path = (input["file_path"] as? String) ?? (input["notebook_path"] as? String) ?? ""
+            return path.isEmpty ? toolName : "\(toolName)(\(path))"
+        case "Read":
+            let path = input["file_path"] as? String ?? ""
+            return path.isEmpty ? "Read" : "Read(\(path))"
+        case "WebFetch":
+            let url = input["url"] as? String ?? ""
+            let prompt = input["prompt"] as? String ?? ""
+            if url.isEmpty { return "WebFetch" }
+            if prompt.isEmpty { return url }
+            return "url: \"\(url)\", prompt: \"\(prompt)\""
+        default:
+            return toolName
+        }
     }
 
     // Claude encodes the cwd by replacing every non-alphanumeric character with '-'

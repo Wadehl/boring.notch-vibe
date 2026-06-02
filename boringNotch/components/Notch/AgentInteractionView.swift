@@ -96,8 +96,8 @@ struct AgentInteractionView: View {
 
     private var questionContent: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // Question text
-            if let q = interaction.question ?? interaction.header {
+            // Question text (for permission: shows tool call summary e.g. "Write(/tmp/test.txt)")
+            if let q = interaction.question {
                 Text(q)
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundColor(.white.opacity(0.85))
