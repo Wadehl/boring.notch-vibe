@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 40px; font-family: system-ui; color: #fff; }
+
+  h2 { font-size: 15px; color: #888; letter-spacing: 0.05em; }
+
+  /* Notch bar mockup */
+  .notch-bar {
+    width: 420px;
+    height: 36px;
+    background: #111;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    position: relative;
+    overflow: visible;
+  }
+
+  /* ── Clawd SVG base ── */
+  .clawd-wrap {
+    position: relative;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
+  .clawd-svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* ── Bounce animation (squat/rise) ── */
+  @keyframes bounce {
+    0%   { transform: translateY(0) scaleY(1)   scaleX(1); }
+    30%  { transform: translateY(2px) scaleY(0.82) scaleX(1.12); }
+    55%  { transform: translateY(-3px) scaleY(1.10) scaleX(0.93); }
+    75%  { transform: translateY(1px) scaleY(0.94) scaleX(1.05); }
+    90%  { transform: translateY(-1px) scaleY(1.04) scaleX(0.98); }
+    100% { transform: translateY(0) scaleY(1)   scaleX(1); }
+  }
+
+  .clawd-svg {
+    animation: bounce 0.72s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite;
+    transform-origin: center bottom;
+  }
+
+  /* ── Headphone glow pulse on the cups ── */
+  .hp-cup {
+    transition: filter 0.3s;
+    animation: hpGlow 1.4s ease-in-out infinite alternate;
+  }
+  @keyframes hpGlow {
+    from { filter: drop-shadow(0 0 2px var(--hp-color)); }
+    to   { filter: drop-shadow(0 0 6px var(--hp-color)) brightness(1.25); }
+  }
+
+  /* ── Floating music notes ── */
+  .notes-wrap {
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  .note {
+    position: absolute;
+    font-size: 9px;
+    color: rgba(255,255,255,0.85);
+    animation: floatNote linear infinite;
+    opacity: 0;
+    user-select: none;
+  }
+
+  /* Three notes staggered — drift up-LEFT */
+  .note:nth-child(1) { animation-duration: 2.1s; animation-delay: 0s;   font-size: 8px; }
+  .note:nth-child(2) { animation-duration: 2.6s; animation-delay: 0.75s; font-size: 10px; }
+  .note:nth-child(3) { animation-duration: 2.3s; animation-delay: 1.4s; font-size: 7px; }
+
+  @keyframes floatNote {
+    0%   { transform: translate(0px, 2px)   rotate(5deg);  opacity: 0; }
+    15%  { opacity: 0.9; }
+    65%  { opacity: 0.6; }
+    100% { transform: translate(-14px, -18px) rotate(-8deg); opacity: 0; }
+  }
+
+  /* ── Badge ── */
+  .badge {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.6);
+    background: rgba(255,255,255,0.1);
+    border-radius: 4px;
+    padding: 1px 6px;
+  }
+
+  /* ── Controls ── */
+  .controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  label { font-size: 12px; color: #999; }
+  input[type=color] { border: none; background: none; width: 32px; height: 24px; cursor: pointer; border-radius: 4px; }
+  button {
+    font-size: 12px; padding: 6px 14px; border-radius: 8px;
+    border: 1px solid #333; background: #1a1a1a; color: #ccc; cursor: pointer;
+  }
+  button:hover { background: #252525; }
+</style>
+</head>
+<body>
+
+<h2>Clawd 戴耳机 · 蹲起 + 音符飘动 DEMO</h2>
+
+<div class="notch-bar">
+  <div class="clawd-wrap">
+    <!-- Floating notes -->
+    <div class="notes-wrap">
+      <span class="note">♪</span>
+      <span class="note">♫</span>
+      <span class="note">♩</span>
+    </div>
+
+    <!-- Clawd SVG with headphones -->
+    <svg class="clawd-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="--hp-color: #4FC3F7;">
+
+      <!-- Clawd body (evenodd) -->
+      <path fill-rule="evenodd" clip-rule="evenodd"
+        d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949z
+           M6 10.949h1.488V8.102H6v2.847z
+           M16.51 10.949H18V8.102h-1.49v2.847z"
+        fill="#D97757"/>
+
+      <!-- Headphone top bar -->
+      <rect class="hp-cup" x="4" y="1.2" width="16" height="1.4" rx="0.7" fill="#4FC3F7"/>
+      <!-- Left stem -->
+      <rect class="hp-cup" x="4" y="1.2" width="1.5" height="3.8" fill="#4FC3F7"/>
+      <!-- Right stem -->
+      <rect class="hp-cup" x="18.5" y="1.2" width="1.5" height="3.8" fill="#4FC3F7"/>
+      <!-- Left ear cup -->
+      <rect class="hp-cup" x="1.5" y="2.5" width="4" height="5" rx="1.2" fill="#4FC3F7"/>
+      <!-- Right ear cup -->
+      <rect class="hp-cup" x="18.5" y="2.5" width="4" height="5" rx="1.2" fill="#4FC3F7"/>
+    </svg>
+  </div>
+
+  <div style="flex:1"></div>
+  <span class="badge">2</span>
+</div>
+
+<!-- Color picker -->
+<div class="controls">
+  <label>耳机颜色 (avgColor 模拟)：</label>
+  <input type="color" id="colorPick" value="#4FC3F7" oninput="setColor(this.value)">
+  <button onclick="randomColor()">随机色</button>
+</div>
+
+<script>
+function setColor(hex) {
+  document.querySelectorAll('.hp-cup').forEach(el => el.setAttribute('fill', hex));
+  document.querySelector('.clawd-svg').style.setProperty('--hp-color', hex);
+}
+function randomColor() {
+  // Generate vivid colors (high saturation)
+  const h = Math.random() * 360;
+  const s = 60 + Math.random() * 35;
+  const l = 55 + Math.random() * 20;
+  const hex = hslToHex(h, s, l);
+  document.getElementById('colorPick').value = hex;
+  setColor(hex);
+}
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => { const k = (n + h / 30) % 12; const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1); return Math.round(255 * color).toString(16).padStart(2, '0'); };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+</script>
+</body>
+</html>

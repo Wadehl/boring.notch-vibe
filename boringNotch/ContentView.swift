@@ -293,12 +293,7 @@ struct ContentView: View {
                       } else if coordinator.sneakPeek.show && Defaults[.inlineHUD] && (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && vm.notchState == .closed {
                           InlineHUD(type: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon, hoverAnimation: $isHovering, gestureProgress: $gestureProgress)
                               .transition(.opacity)
-                      } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music) && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle) && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed {
-                          MusicLiveActivity()
-                              .frame(alignment: .center)
-                      } else if !coordinator.expandingView.show && vm.notchState == .closed && (!musicManager.isPlaying && musicManager.isPlayerIdle) && Defaults[.showNotHumanFace] && !vm.hideOnClosed  {
-                          BoringFaceAnimation()
-                       } else if vm.notchState == .closed && !agentManager.activeSessions.isEmpty && !vm.hideOnClosed {
+                      } else if vm.notchState == .closed && !agentManager.activeSessions.isEmpty && !vm.hideOnClosed {
                            let screen = vm.screenUUID.flatMap { NSScreen.screen(withUUID: $0) } ?? NSScreen.main
                            let hasNotch = (screen?.safeAreaInsets.top ?? 0) > 0
                            AgentClosedNotchView(hasHardwareNotch: hasNotch)
@@ -307,6 +302,11 @@ struct ContentView: View {
                                    height: vm.effectiveClosedNotchHeight
                                )
                                .transition(.opacity)
+                      } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music) && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle) && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed {
+                          MusicLiveActivity()
+                              .frame(alignment: .center)
+                      } else if !coordinator.expandingView.show && vm.notchState == .closed && (!musicManager.isPlaying && musicManager.isPlayerIdle) && Defaults[.showNotHumanFace] && !vm.hideOnClosed  {
+                          BoringFaceAnimation()
                        } else if vm.notchState == .open && agentManager.pendingInteractions.isEmpty {
                            BoringHeader()
                                .frame(height: max(24, vm.effectiveClosedNotchHeight))
