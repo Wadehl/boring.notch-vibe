@@ -35,11 +35,14 @@
 	<key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
 	<array>
 		<string>/.claude/sessions/</string>
-		<string>/.claude/projects/</string>
 		<string>/.codex/logs_2.sqlite</string>
 		<string>/.codex/logs_2.sqlite-shm</string>
 		<string>/.codex/logs_2.sqlite-wal</string>
 		<string>/.codex/session_index.jsonl</string>
+	</array>
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+	<array>
+		<string>/.claude/projects/</string>
 	</array>
 	<key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
 	<array>

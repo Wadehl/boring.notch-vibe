@@ -154,7 +154,7 @@ struct ContentView: View {
                                 try? await Task.sleep(for: .milliseconds(100))
                                 guard !Task.isCancelled else { return }
                                 await MainActor.run {
-                                    if self.vm.notchState == .open && !self.isHovering && !self.vm.isBatteryPopoverActive && !SharingStateManager.shared.preventNotchClose && self.agentManager.pendingInteraction == nil {
+                                    if self.vm.notchState == .open && !self.isHovering && !self.vm.isBatteryPopoverActive && !SharingStateManager.shared.preventNotchClose && self.agentManager.pendingInteractions.isEmpty {
                                         self.vm.close()
                                     }
                                 }
@@ -169,13 +169,13 @@ struct ContentView: View {
                         }
                     }
                     .onChange(of: vm.isBatteryPopoverActive) {
-                        if !vm.isBatteryPopoverActive && !isHovering && vm.notchState == .open && !SharingStateManager.shared.preventNotchClose && agentManager.pendingInteraction == nil {
+                        if !vm.isBatteryPopoverActive && !isHovering && vm.notchState == .open && !SharingStateManager.shared.preventNotchClose && agentManager.pendingInteractions.isEmpty {
                             hoverTask?.cancel()
                             hoverTask = Task {
                                 try? await Task.sleep(for: .milliseconds(100))
                                 guard !Task.isCancelled else { return }
                                 await MainActor.run {
-                                    if !self.vm.isBatteryPopoverActive && !self.isHovering && self.vm.notchState == .open && !SharingStateManager.shared.preventNotchClose && self.agentManager.pendingInteraction == nil {
+                                    if !self.vm.isBatteryPopoverActive && !self.isHovering && self.vm.notchState == .open && !SharingStateManager.shared.preventNotchClose && self.agentManager.pendingInteractions.isEmpty {
                                         self.vm.close()
                                     }
                                 }
@@ -215,8 +215,8 @@ struct ContentView: View {
         .background(dragDetector)
         .preferredColorScheme(.dark)
         .environmentObject(vm)
-        .onChange(of: agentManager.pendingInteraction) { _, interaction in
-            if interaction != nil && vm.notchState == .closed {
+        .onChange(of: agentManager.pendingInteractions.isEmpty) { _, isEmpty in
+            if !isEmpty && vm.notchState == .closed {
                 withAnimation(.smooth) { vm.open() }
             }
         }
@@ -307,7 +307,7 @@ struct ContentView: View {
                                    height: vm.effectiveClosedNotchHeight
                                )
                                .transition(.opacity)
-                       } else if vm.notchState == .open && agentManager.pendingInteraction == nil {
+                       } else if vm.notchState == .open && agentManager.pendingInteractions.isEmpty {
                            BoringHeader()
                                .frame(height: max(24, vm.effectiveClosedNotchHeight))
                                .opacity(gestureProgress != 0 ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3) : 1.0)
@@ -361,8 +361,38 @@ struct ContentView: View {
               .zIndex(vm.notchState == .open ? 1 : 2)
             if vm.notchState == .open {
                 VStack {
-                    if let interaction = agentManager.pendingInteraction {
-                        AgentInteractionView(interaction: interaction)
+                    if !agentManager.pendingInteractions.isEmpty {
+                        VStack(spacing: 0) {
+                            // Collapse strip — closes notch back to closed state
+                            HStack {
+                                Spacer()
+                                Button(action: {
+                                    withAnimation(.spring(response: 0.45, dampingFraction: 1.0)) {
+                                        vm.close()
+                                    }
+                                }) {
+                                    Image(systemName: "chevron.up")
+                                        .font(.system(size: 9, weight: .semibold))
+                                        .foregroundColor(.white.opacity(0.4))
+                                        .frame(width: 28, height: 16)
+                                        .background(Color.white.opacity(0.06))
+                                        .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .cursor(.pointingHand)
+                                Spacer()
+                            }
+                            .padding(.top, 2)
+
+                            ScrollView(.vertical, showsIndicators: false) {
+                                VStack(spacing: 4) {
+                                    ForEach(agentManager.pendingInteractions, id: \.sessionId) { interaction in
+                                        AgentInteractionView(interaction: interaction)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
                     } else {
                         switch coordinator.currentView {
                         case .home:
@@ -572,7 +602,7 @@ struct ContentView: View {
                         self.isHovering = false
                     }
                     
-                    if self.vm.notchState == .open && !self.vm.isBatteryPopoverActive && !SharingStateManager.shared.preventNotchClose && self.agentManager.pendingInteraction == nil {
+                    if self.vm.notchState == .open && !self.vm.isBatteryPopoverActive && !SharingStateManager.shared.preventNotchClose && self.agentManager.pendingInteractions.isEmpty {
                         self.vm.close()
                     }
                 }

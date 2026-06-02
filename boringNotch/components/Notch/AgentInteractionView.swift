@@ -12,6 +12,7 @@ struct AgentInteractionView: View {
     @ObservedObject private var manager = AgentStatusManager.shared
     @State private var isHoveringDismiss = false
     @State private var isHoveringCard = false
+    @State private var selectedLabels: Set<String> = []
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -37,7 +38,7 @@ struct AgentInteractionView: View {
             .cursor(.pointingHand)
 
             // Dismiss button — top-right corner
-            Button(action: { manager.dismissPendingInteraction() }) {
+            Button(action: { manager.dismissPendingInteraction(sessionId: interaction.sessionId) }) {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundColor(.white.opacity(isHoveringDismiss ? 0.9 : 0.4))
@@ -96,7 +97,6 @@ struct AgentInteractionView: View {
 
     private var questionContent: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // Question text (for permission: shows tool call summary e.g. "Write(/tmp/test.txt)")
             if let q = interaction.question {
                 Text(q)
                     .font(.system(size: 11.5, weight: .medium))
@@ -105,12 +105,14 @@ struct AgentInteractionView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // Options as compact chips
             if !interaction.options.isEmpty {
-                optionChips
+                if interaction.multiSelect {
+                    multiSelectChips
+                } else {
+                    optionChips
+                }
             }
 
-            // Click hint
             clickHint
         }
     }
@@ -121,8 +123,60 @@ struct AgentInteractionView: View {
             ForEach(opts.indices, id: \.self) { i in
                 OptionChip(label: opts[i].label) {
                     print("[AgentInteractionView] option chip tapped: index=\(i) label=\(opts[i].label)")
-                    manager.selectOption(claudePid: interaction.pid, optionIndex: i)
+                    manager.selectOption(claudePid: interaction.pid, optionIndex: i, sessionId: interaction.sessionId)
                 }
+            }
+        }
+    }
+
+    private var multiSelectChips: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            let opts = Array(interaction.options.prefix(4))
+            FlowLayout(spacing: 4) {
+                ForEach(opts.indices, id: \.self) { i in
+                    let label = opts[i].label
+                    let isSelected = selectedLabels.contains(label)
+                    ToggleChip(label: label, isSelected: isSelected) {
+                        if isSelected {
+                            selectedLabels.remove(label)
+                        } else {
+                            selectedLabels.insert(label)
+                        }
+                    }
+                }
+            }
+
+            if selectedLabels.isEmpty {
+                Text("选择后点击确认发送，再在终端自行提交")
+                    .font(.system(size: 10))
+                    .foregroundColor(.gray.opacity(0.4))
+                    .padding(.top, 1)
+            } else {
+                let ordered = interaction.options.enumerated()
+                    .filter { selectedLabels.contains($0.element.label) }
+                    .map { $0 }
+                Button(action: {
+                    let indices = ordered.map(\.offset)
+                    manager.sendMultiSelectAndFocus(
+                        claudePid: interaction.pid,
+                        optionIndices: indices,
+                        sessionId: interaction.sessionId
+                    )
+                }) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "return")
+                            .font(.system(size: 9, weight: .bold))
+                        Text("确认发送 · 请在终端自行提交")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(iColor.opacity(0.7)))
+                }
+                .buttonStyle(.plain)
+                .cursor(.pointingHand)
+                .padding(.top, 2)
             }
         }
     }
@@ -151,7 +205,7 @@ struct AgentInteractionView: View {
     // MARK: - Actions
 
     private func focusTerminal() {
-        manager.focusTerminal(claudePid: interaction.pid)
+        manager.focusTerminal(claudePid: interaction.pid, sessionId: interaction.sessionId)
     }
 }
 
@@ -178,7 +232,40 @@ private struct OptionChip: View {
     }
 }
 
-// MARK: - Simple flow layout for option chips
+// MARK: - Toggle chip (for multiSelect)
+
+private struct ToggleChip: View {
+    let label: String
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(iColor)
+                }
+                Text(label)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(isSelected ? .white : .white.opacity(0.75))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(isSelected ? iColor.opacity(0.25) : (isHovering ? Color.white.opacity(0.15) : Color.white.opacity(0.08))))
+            .overlay(Capsule().strokeBorder(isSelected ? iColor.opacity(0.6) : Color.clear, lineWidth: 1))
+            .animation(.easeInOut(duration: 0.12), value: isSelected)
+            .animation(.easeInOut(duration: 0.12), value: isHovering)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .cursor(.pointingHand)
+    }
+}
+
+// MARK: - Simple flow layout for chips
 
 private struct FlowLayout: Layout {
     var spacing: CGFloat = 4

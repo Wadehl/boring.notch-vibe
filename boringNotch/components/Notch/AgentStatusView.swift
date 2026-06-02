@@ -192,15 +192,6 @@ struct AgentSessionRow: View {
                         .foregroundColor(.white.opacity(0.9))
                         .lineLimit(1)
 
-                    // Last user message
-                    if let msg = session.lastUserMessage ?? session.cwd.map({ URL(fileURLWithPath: $0).lastPathComponent }) {
-                        Text(msg)
-                            .font(.system(size: 10))
-                            .foregroundColor(.gray.opacity(0.7))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-
                     // Status line
                     HStack(spacing: 4) {
                         Circle()
@@ -237,7 +228,7 @@ struct AgentSessionRow: View {
                         .foregroundColor(.gray.opacity(0.5))
                 }
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
             .padding(.horizontal, 10)
             .background(
                 RoundedRectangle(cornerRadius: 8)

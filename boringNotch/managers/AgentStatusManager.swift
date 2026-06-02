@@ -45,6 +45,11 @@ struct PendingInteraction: Equatable {
     let multiSelect: Bool
     // For ExitPlanMode
     let planTitle: String?
+    // For JSONL-based reply (multiSelect)
+    let toolUseId: String?     // id of the tool_use block to answer
+    let assistantUuid: String? // uuid of the assistant message (becomes parentUuid)
+    let cwd: String?           // working dir, needed to locate the JSONL file
+    let claudeVersion: String? // version field written into the JSONL line
 }
 
 struct AgentSession: Identifiable, Equatable {
@@ -68,20 +73,33 @@ final class AgentStatusManager: ObservableObject {
     static let shared = AgentStatusManager()
 
     @Published private(set) var sessions: [AgentSession] = []
-    @Published private(set) var pendingInteraction: PendingInteraction?
+    @Published private(set) var pendingInteractions: [PendingInteraction] = []
 
-    // When the user dismisses a pending interaction card, we suppress it until a new one arrives
-    private var dismissedInteractionKey: String?
+    // Keys of interactions the user has dismissed; suppressed until a new one arrives
+    private var dismissedInteractionKeys: Set<String> = []
 
-    func dismissPendingInteraction() {
-        dismissedInteractionKey = pendingInteraction.map { "\($0.sessionId)-\($0.type)" }
-        pendingInteraction = nil
+    var pendingInteraction: PendingInteraction? { pendingInteractions.first }
+
+    func dismissPendingInteraction(sessionId: String? = nil) {
+        if let sessionId {
+            if let idx = pendingInteractions.firstIndex(where: { $0.sessionId == sessionId }) {
+                let key = "\(pendingInteractions[idx].sessionId)-\(pendingInteractions[idx].type)"
+                dismissedInteractionKeys.insert(key)
+                pendingInteractions.remove(at: idx)
+            }
+        } else {
+            // Legacy: dismiss first
+            if let first = pendingInteractions.first {
+                dismissedInteractionKeys.insert("\(first.sessionId)-\(first.type)")
+                pendingInteractions.removeFirst()
+            }
+        }
     }
 
     private let warpController = WarpController()
     private let terminalAppController = TerminalAppController()
 
-    func selectOption(claudePid: Int, optionIndex: Int) {
+    func selectOption(claudePid: Int, optionIndex: Int, sessionId: String? = nil) {
         print("[AgentStatusManager] selectOption index=\(optionIndex) claudePid=\(claudePid)")
         guard let terminal = terminalRunningApp(forPid: claudePid) else { return }
         let bundleId = terminal.bundleIdentifier ?? ""
@@ -98,9 +116,7 @@ final class AgentStatusManager: ObservableObject {
                 alert.runModal()
                 return
             }
-            terminalAppController.activateAndSend(digit: digit) {
-                self.dismissPendingInteraction()
-            }
+            terminalAppController.activateAndSend(digit: digit) {}
         } else if bundleId.hasPrefix("dev.warp.") {
             guard AXIsProcessTrusted() else {
                 XPCHelperClient.shared.requestAccessibilityAuthorization()
@@ -112,15 +128,67 @@ final class AgentStatusManager: ObservableObject {
                 alert.runModal()
                 return
             }
-            warpController.activateAndSend(claudePid: claudePid, digit: digit) {
-                self.dismissPendingInteraction()
-            }
+            warpController.activateAndSend(claudePid: claudePid, digit: digit) {}
         } else {
-            focusTerminal(claudePid: claudePid, dismissOnSuccess: true)
+            focusTerminal(claudePid: claudePid, sessionId: sessionId, dismissOnSuccess: false)
         }
     }
 
-    func focusTerminal(claudePid: Int, dismissOnSuccess: Bool = false) {
+    func sendMultiSelectAndFocus(claudePid: Int, optionIndices: [Int], sessionId: String?) {
+        guard let terminal = terminalRunningApp(forPid: claudePid) else { return }
+        guard AXIsProcessTrusted() else {
+            XPCHelperClient.shared.requestAccessibilityAuthorization()
+            let alert = NSAlert()
+            alert.messageText = "需要辅助功能权限"
+            alert.informativeText = "请在系统设置中允许 boringNotch 使用辅助功能，然后重启 boringNotch 以生效。"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "好的")
+            alert.runModal()
+            return
+        }
+        let bundleId = terminal.bundleIdentifier ?? ""
+        let digits = optionIndices.map { $0 + 1 }
+
+        if bundleId.hasPrefix("dev.warp.") {
+            // Activate warp tab, then send all digits in sequence
+            Task {
+                let index = await XPCHelperClient.shared.warpTabIndex(forClaudePid: claudePid)
+                await MainActor.run {
+                    guard let app = self.warpController.runningApp() else { return }
+                    app.activate()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        if index > 0 { self.warpController.sendTabSwitch(index: index) }
+                        var delay = index > 0 ? 0.3 : 0.0
+                        for digit in digits {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                                self.warpController.sendDigit(digit)
+                            }
+                            delay += 0.05
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                            self.dismissPendingInteraction(sessionId: sessionId)
+                        }
+                    }
+                }
+            }
+        } else if bundleId == "com.apple.Terminal" {
+            terminalAppController.activate(claudePid: claudePid)
+            var delay = 0.15
+            for digit in digits {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    self.terminalAppController.sendDigit(digit)
+                }
+                delay += 0.05
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                self.dismissPendingInteraction(sessionId: sessionId)
+            }
+        } else {
+            focusTerminal(claudePid: claudePid, sessionId: sessionId, dismissOnSuccess: true)
+        }
+    }
+
+    func focusTerminal(claudePid: Int, sessionId: String? = nil, dismissOnSuccess: Bool = false) {
         print("[AgentStatusManager] focusTerminal called, claudePid=\(claudePid)")
         guard let terminal = terminalRunningApp(forPid: claudePid) else {
             print("[AgentStatusManager] ERROR: no terminal found for pid=\(claudePid)")
@@ -135,7 +203,86 @@ final class AgentStatusManager: ObservableObject {
         } else {
             activateAppByURL(terminal: terminal)
         }
-        if dismissOnSuccess { dismissPendingInteraction() }
+        if dismissOnSuccess { dismissPendingInteraction(sessionId: sessionId) }
+    }
+
+    /// Writes a tool_result line directly into the session JSONL for multiSelect answers.
+    /// `selectedLabels` is the ordered list of chosen option labels (comma-space joined).
+    func submitMultiSelectAnswer(interaction: PendingInteraction, selectedLabels: [String]) {
+        guard interaction.multiSelect,
+              let toolUseId = interaction.toolUseId,
+              let assistantUuid = interaction.assistantUuid,
+              let cwd = interaction.cwd
+        else { return }
+
+        let questionText = interaction.question ?? ""
+        let answersJoined = selectedLabels.joined(separator: ", ")
+
+        // Build the content string matching Claude Code's format
+        let contentStr = "Your questions have been answered: \"\(questionText)\"=\"\(answersJoined)\". You can now continue with these answers in mind."
+
+        // Reconstruct the questions array for toolUseResult
+        let questionsArray: [[String: Any]] = [[
+            "question": questionText,
+            "header": interaction.header ?? "",
+            "multiSelect": true,
+            "options": interaction.options.map { ["label": $0.label, "description": $0.description] }
+        ]]
+
+        let now = ISO8601DateFormatter().string(from: Date())
+        let lineObj: [String: Any] = [
+            "parentUuid": assistantUuid,
+            "isSidechain": false,
+            "promptId": UUID().uuidString,
+            "type": "user",
+            "message": [
+                "role": "user",
+                "content": [[
+                    "type": "tool_result",
+                    "content": contentStr,
+                    "tool_use_id": toolUseId
+                ] as [String: Any]]
+            ] as [String: Any],
+            "uuid": UUID().uuidString,
+            "timestamp": now,
+            "toolUseResult": [
+                "questions": questionsArray,
+                "answers": [questionText: answersJoined]
+            ] as [String: Any],
+            "sourceToolAssistantUUID": assistantUuid,
+            "userType": "external",
+            "entrypoint": "cli",
+            "cwd": cwd,
+            "sessionId": interaction.sessionId,
+            "version": interaction.claudeVersion ?? "2.1.150",
+        ]
+
+        guard let lineData = try? JSONSerialization.data(withJSONObject: lineObj),
+              var lineStr = String(data: lineData, encoding: .utf8)
+        else { return }
+        lineStr += "\n"
+
+        let encodedCwd = encodeCwd(cwd)
+        let jsonlFile = Self.realHomeURL
+            .appendingPathComponent(".claude/projects")
+            .appendingPathComponent(encodedCwd)
+            .appendingPathComponent("\(interaction.sessionId).jsonl")
+
+        queue.async {
+            guard let fileHandle = try? FileHandle(forWritingTo: jsonlFile) else {
+                print("[AgentStatusManager] submitMultiSelectAnswer: cannot open \(jsonlFile.path)")
+                return
+            }
+            defer { fileHandle.closeFile() }
+            fileHandle.seekToEndOfFile()
+            if let data = lineStr.data(using: .utf8) {
+                fileHandle.write(data)
+                print("[AgentStatusManager] submitMultiSelectAnswer: wrote answer '\(answersJoined)' to \(jsonlFile.lastPathComponent)")
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.dismissPendingInteraction(sessionId: interaction.sessionId)
+            }
+        }
     }
 
     private func activateAppByURL(terminal: NSRunningApplication) {
@@ -332,27 +479,25 @@ final class AgentStatusManager: ObservableObject {
             ))
         }
 
-        // Detect pending interaction across all active sessions
-        var detectedInteraction: PendingInteraction?
+        // Detect pending interactions across all active sessions (one per session)
+        var detectedInteractions: [PendingInteraction] = []
         for session in updated where session.status != .done {
             guard let pid = Int(session.id) else { continue }
 
+            var interaction: PendingInteraction?
+
             // First: scan JSONL for AskUserQuestion / ExitPlanMode (authoritative)
-            if let sid = session.sessionId, let cwd = session.cwd,
-               let interaction = detectPendingInteraction(cwd: cwd, sessionId: sid, pid: pid, sessionSummary: session.summary) {
-                detectedInteraction = interaction
-                break
+            if let sid = session.sessionId, let cwd = session.cwd {
+                interaction = detectPendingInteraction(cwd: cwd, sessionId: sid, pid: pid, sessionSummary: session.summary)
             }
 
-            // Fallback: permission prompt — only when JSONL found no interactive tool_use
-            // and session JSON explicitly says status=waiting + waitingFor=permission prompt
-            if sessionWaitingFor[pid] == "permission prompt" {
-                if let sid = session.sessionId, let cwd = session.cwd,
-                   let interaction = detectPermissionInteraction(cwd: cwd, sessionId: sid, pid: pid, sessionSummary: session.summary) {
-                    detectedInteraction = interaction
-                } else {
-                    // Last resort: no JSONL info available
-                    detectedInteraction = PendingInteraction(
+            // Fallback: permission prompt
+            if interaction == nil && sessionWaitingFor[pid] == "permission prompt" {
+                if let sid = session.sessionId, let cwd = session.cwd {
+                    interaction = detectPermissionInteraction(cwd: cwd, sessionId: sid, pid: pid, sessionSummary: session.summary)
+                }
+                if interaction == nil {
+                    interaction = PendingInteraction(
                         sessionId: session.sessionId ?? session.id,
                         pid: pid,
                         sessionSummary: session.summary,
@@ -364,14 +509,21 @@ final class AgentStatusManager: ObservableObject {
                             PendingInteractionOption(label: "No", description: "Deny", keystrokeText: "n"),
                         ],
                         multiSelect: false,
-                        planTitle: nil
+                        planTitle: nil,
+                        toolUseId: nil,
+                        assistantUuid: nil,
+                        cwd: nil,
+                        claudeVersion: nil
                     )
                 }
-                break
+            }
+
+            if let interaction {
+                detectedInteractions.append(interaction)
             }
         }
 
-        updateSessions(removing: .claudeCode, with: updated, pendingInteraction: detectedInteraction)
+        updateSessions(removing: .claudeCode, with: updated, pendingInteractions: detectedInteractions)
     }
 
     /// Reads the session title from sessions-index.json (firstPrompt field), stripping XML tags.
@@ -434,7 +586,10 @@ final class AgentStatusManager: ObservableObject {
             }
 
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty && !trimmed.hasPrefix("[Image") {
+            if !trimmed.isEmpty && !trimmed.hasPrefix("[Image")
+                && !trimmed.hasPrefix("Base directory")
+                && !trimmed.hasPrefix("<context")
+                && !trimmed.hasPrefix("<system") {
                 lastUserText = trimmed
                 break
             }
@@ -457,13 +612,17 @@ final class AgentStatusManager: ObservableObject {
         let lines = content.components(separatedBy: "\n").filter { !$0.isEmpty }
 
         // Walk backwards to find the last assistant message with an interactive tool_use
-        var lastInteractiveTool: (id: String, name: String, input: [String: Any])?
+        var lastInteractiveTool: (id: String, name: String, input: [String: Any], assistantUuid: String)?
         var respondedToolIds: Set<String> = []
+        var claudeVersion: String?
 
         for line in lines.reversed() {
             guard let data = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else { continue }
+
+            // Capture version from any line that has it
+            if claudeVersion == nil, let v = obj["version"] as? String { claudeVersion = v }
 
             let msgType = obj["type"] as? String ?? ""
 
@@ -481,6 +640,7 @@ final class AgentStatusManager: ObservableObject {
 
             // Find last assistant interactive tool_use
             if msgType == "assistant" && lastInteractiveTool == nil {
+                let assistantUuid = obj["uuid"] as? String ?? ""
                 let message = obj["message"] as? [String: Any] ?? [:]
                 let msgContent = message["content"] as? [[String: Any]] ?? []
                 for item in msgContent {
@@ -490,7 +650,7 @@ final class AgentStatusManager: ObservableObject {
                           ["AskUserQuestion", "ExitPlanMode"].contains(toolName)
                     else { continue }
                     let input = item["input"] as? [String: Any] ?? [:]
-                    lastInteractiveTool = (id: toolId, name: toolName, input: input)
+                    lastInteractiveTool = (id: toolId, name: toolName, input: input, assistantUuid: assistantUuid)
                     break
                 }
             }
@@ -526,10 +686,13 @@ final class AgentStatusManager: ObservableObject {
                 header: header,
                 options: options,
                 multiSelect: multiSelect,
-                planTitle: nil
+                planTitle: nil,
+                toolUseId: tool.id,
+                assistantUuid: tool.assistantUuid,
+                cwd: cwd,
+                claudeVersion: claudeVersion
             )
         } else if tool.name == "ExitPlanMode" {
-            // Extract plan title from the plan content (first # heading)
             let planContent = tool.input["plan"] as? String ?? ""
             let planTitle = planContent.components(separatedBy: "\n")
                 .first { $0.hasPrefix("# ") }
@@ -543,7 +706,11 @@ final class AgentStatusManager: ObservableObject {
                 header: nil,
                 options: [],
                 multiSelect: false,
-                planTitle: planTitle
+                planTitle: planTitle,
+                toolUseId: nil,
+                assistantUuid: nil,
+                cwd: nil,
+                claudeVersion: nil
             )
         }
 
@@ -615,7 +782,11 @@ final class AgentStatusManager: ObservableObject {
             header: tool.name,
             options: options,
             multiSelect: false,
-            planTitle: nil
+            planTitle: nil,
+            toolUseId: nil,
+            assistantUuid: nil,
+            cwd: nil,
+            claudeVersion: nil
         )
     }
 
@@ -652,6 +823,14 @@ final class AgentStatusManager: ObservableObject {
             }
             opts.append(PendingInteractionOption(label: "No", description: "Deny", keystrokeText: "n"))
         } else {
+            // MCP tool or unknown tool
+            let displayName = formatMcpToolName(toolName)
+            let claudeDir = (cwd as NSString).appendingPathComponent(".claude")
+            opts.append(PendingInteractionOption(
+                label: "Yes, and don't ask again for \(displayName) commands in \(claudeDir)",
+                description: "Always allow this MCP tool",
+                keystrokeText: "a"
+            ))
             opts.append(PendingInteractionOption(label: "No", description: "Deny", keystrokeText: "n"))
         }
 
@@ -706,21 +885,38 @@ final class AgentStatusManager: ObservableObject {
     /// Mirrors fK4 + Py6's option-2 logic for Bash.
     /// Bash option 2 is only shown when Claude Code has generated "suggestions"
     /// (addRules/addDirectories). We approximate this by detecting if the command
-    /// reads from outside cwd — the most common case that produces a suggestion.
+    /// reads from an outside absolute path as its *primary* target argument.
     private func bashPermissionOption2(command: String, cwd: String) -> PendingInteractionOption? {
-        // Extract the first meaningful path from the command that is outside cwd.
-        // Claude Code's actual logic calls an LLM to extract a command prefix;
-        // we use a heuristic: scan tokens for absolute paths outside cwd.
+        // Commands with -exec can modify files — Claude Code explicitly refuses to
+        // auto-allow these ("cannot be auto-allowed by a Bash(find:*) prefix rule").
+        if command.contains("-exec") { return nil }
+
         let tokens = command.components(separatedBy: .whitespaces)
         let cwdNorm = cwd.hasSuffix("/") ? cwd : cwd + "/"
 
+        // Flags whose *next* token is a value argument, not a target path.
+        // Scanning the value as a path would produce spurious option-2 entries.
+        let flagsWithValues: Set<String> = [
+            "-name", "-iname", "-newer", "-path", "-ipath", "-regex",
+            "-maxdepth", "-mindepth", "-type", "-user", "-group",
+            "-size", "-mtime", "-atime", "-ctime", "-perm",
+            "-o", "-and", "-or",
+        ]
+
+        var skipNext = false
         for token in tokens {
+            if skipNext { skipNext = false; continue }
+            if flagsWithValues.contains(token) { skipNext = true; continue }
+            // Skip flags themselves
+            if token.hasPrefix("-") { continue }
+
             let t = token.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
             guard t.hasPrefix("/"), !t.hasPrefix(cwdNorm), t != cwd else { continue }
-            let parentDir = (t as NSString).deletingLastPathComponent
-            let displayDir = (parentDir as NSString).lastPathComponent.isEmpty ? parentDir : (parentDir as NSString).lastPathComponent
 
-            // Mirrors: "Yes, allow reading from <dir>/ from this project"
+            let parentDir = (t as NSString).deletingLastPathComponent
+            let dirName = (parentDir as NSString).lastPathComponent
+            let displayDir = dirName.isEmpty ? parentDir : dirName
+
             return PendingInteractionOption(
                 label: "Yes, allow reading from \(displayDir)/ from this project",
                 description: "Allow reads from \(displayDir)",
@@ -728,7 +924,6 @@ final class AgentStatusManager: ObservableObject {
             )
         }
 
-        // No outside path found → no option 2 (Bash with no suggestions shows only Yes/No)
         return nil
     }
 
@@ -753,8 +948,20 @@ final class AgentStatusManager: ObservableObject {
             if prompt.isEmpty { return url }
             return "url: \"\(url)\", prompt: \"\(prompt)\""
         default:
-            return toolName
+            // MCP tools use the pattern mcp__<serverName>__<toolName>
+            return formatMcpToolName(toolName)
         }
+    }
+
+    /// Formats an MCP tool name from `mcp__server__tool` → `server - tool`.
+    /// Falls back to the raw name for non-MCP tools.
+    private func formatMcpToolName(_ toolName: String) -> String {
+        guard toolName.hasPrefix("mcp__") else { return toolName }
+        let parts = toolName.dropFirst(5).components(separatedBy: "__")
+        guard parts.count >= 2 else { return toolName }
+        let server = parts[0]
+        let tool = parts[1...].joined(separator: "__")
+        return "\(server) - \(tool)"
     }
 
     // Claude encodes the cwd by replacing every non-alphanumeric character with '-'
@@ -855,7 +1062,7 @@ final class AgentStatusManager: ObservableObject {
 
     // MARK: - Helpers
 
-    private func updateSessions(removing app: AgentApp, with newSessions: [AgentSession], pendingInteraction: PendingInteraction? = nil) {
+    private func updateSessions(removing app: AgentApp, with newSessions: [AgentSession], pendingInteractions: [PendingInteraction] = []) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             var kept = self.sessions.filter { $0.app != app }
@@ -863,21 +1070,13 @@ final class AgentStatusManager: ObservableObject {
             kept.append(contentsOf: visible)
             self.sessions = kept
             if app == .claudeCode {
-                // Suppress if the user already dismissed this exact interaction
-                if let incoming = pendingInteraction {
-                    let key = "\(incoming.sessionId)-\(incoming.type)"
-                    if key == self.dismissedInteractionKey {
-                        // still dismissed — don't update
-                    } else {
-                        // New interaction or dismissal cleared — show it and clear dismissal key
-                        self.dismissedInteractionKey = nil
-                        self.pendingInteraction = incoming
-                    }
-                } else {
-                    // No pending interaction: clear dismiss state so next one shows
-                    self.dismissedInteractionKey = nil
-                    self.pendingInteraction = nil
+                // Filter out dismissed interactions; clear dismissed keys for interactions no longer present
+                let incomingKeys = Set(pendingInteractions.map { "\($0.sessionId)-\($0.type)" })
+                self.dismissedInteractionKeys = self.dismissedInteractionKeys.intersection(incomingKeys)
+                let visible = pendingInteractions.filter { i in
+                    !self.dismissedInteractionKeys.contains("\(i.sessionId)-\(i.type)")
                 }
+                self.pendingInteractions = visible
             }
         }
     }
