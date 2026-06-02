@@ -70,7 +70,6 @@ final class AgentStatusManager: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = []
     @Published private(set) var pendingInteraction: PendingInteraction?
 
-    private var appActivationObserver: Any?
     // When the user dismisses a pending interaction card, we suppress it until a new one arrives
     private var dismissedInteractionKey: String?
 
@@ -79,15 +78,43 @@ final class AgentStatusManager: ObservableObject {
         pendingInteraction = nil
     }
 
+    private let warpController = WarpController()
+    private let terminalAppController = TerminalAppController()
+
     func selectOption(claudePid: Int, optionIndex: Int) {
         print("[AgentStatusManager] selectOption index=\(optionIndex) claudePid=\(claudePid)")
         guard let terminal = terminalRunningApp(forPid: claudePid) else { return }
         let bundleId = terminal.bundleIdentifier ?? ""
-        let isTerminalApp = bundleId == "com.apple.Terminal"
+        let digit = optionIndex + 1
 
-        if isTerminalApp {
-            let cwd = sessions.first(where: { $0.id == String(claudePid) })?.cwd
-            activateTerminalWindowAndSendOption(cwd: cwd, optionIndex: optionIndex, claudePid: claudePid)
+        if bundleId == "com.apple.Terminal" {
+            guard AXIsProcessTrusted() else {
+                XPCHelperClient.shared.requestAccessibilityAuthorization()
+                let alert = NSAlert()
+                alert.messageText = "需要辅助功能权限"
+                alert.informativeText = "请在系统设置中允许 boringNotch 使用辅助功能，然后重启 boringNotch 以生效。"
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "好的")
+                alert.runModal()
+                return
+            }
+            terminalAppController.activateAndSend(digit: digit) {
+                self.dismissPendingInteraction()
+            }
+        } else if bundleId.hasPrefix("dev.warp.") {
+            guard AXIsProcessTrusted() else {
+                XPCHelperClient.shared.requestAccessibilityAuthorization()
+                let alert = NSAlert()
+                alert.messageText = "需要辅助功能权限"
+                alert.informativeText = "请在系统设置中允许 boringNotch 使用辅助功能，然后重启 boringNotch 以生效。"
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "好的")
+                alert.runModal()
+                return
+            }
+            warpController.activateAndSend(claudePid: claudePid, digit: digit) {
+                self.dismissPendingInteraction()
+            }
         } else {
             focusTerminal(claudePid: claudePid, dismissOnSuccess: true)
         }
@@ -100,162 +127,17 @@ final class AgentStatusManager: ObservableObject {
             return
         }
         let bundleId = terminal.bundleIdentifier ?? ""
-        let isWarp = bundleId.hasPrefix("dev.warp.")
-        print("[AgentStatusManager] terminal bundleId=\(bundleId) isWarp=\(isWarp)")
 
-        if isWarp {
-            let cwd = sessions.first(where: { $0.id == String(claudePid) })?.cwd
-            print("[AgentStatusManager] Warp cwd=\(cwd ?? "nil")")
-            activateWarpWindow(cwd: cwd, terminal: terminal)
-            if dismissOnSuccess { dismissPendingInteraction() }
+        if bundleId.hasPrefix("dev.warp.") {
+            warpController.activateTab(claudePid: claudePid)
+        } else if bundleId == "com.apple.Terminal" {
+            terminalAppController.activate(claudePid: claudePid)
         } else {
             activateAppByURL(terminal: terminal)
-            if dismissOnSuccess { dismissPendingInteraction() }
         }
+        if dismissOnSuccess { dismissPendingInteraction() }
     }
 
-    /// For Terminal.app: activate the window matching cwd, then send the option number + Enter.
-    private func activateTerminalWindowAndSendOption(cwd: String?, optionIndex: Int, claudePid: Int) {
-        let optionNumber = optionIndex + 1
-
-        Task {
-            print("[AgentStatusManager] sending option \(optionNumber), AXIsProcessTrusted=\(AXIsProcessTrusted())")
-
-            if !AXIsProcessTrusted() {
-                XPCHelperClient.shared.requestAccessibilityAuthorization()
-                print("[AgentStatusManager] requested Accessibility via XPC Helper — please grant and try again")
-                await MainActor.run {
-                    let alert = NSAlert()
-                    alert.messageText = "需要辅助功能权限"
-                    alert.informativeText = "请在系统设置中允许 boringNotch 使用辅助功能，然后重启 boringNotch 以生效。"
-                    alert.alertStyle = .warning
-                    alert.addButton(withTitle: "好的")
-                    alert.runModal()
-                }
-                return
-            }
-
-            // Activate Terminal
-            await MainActor.run {
-                _ = NSWorkspace.shared.runningApplications
-                    .first { $0.bundleIdentifier == "com.apple.Terminal" }?
-                    .activate(options: [])
-            }
-            try? await Task.sleep(for: .milliseconds(400))
-
-            let keyCodes: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
-            let keyCode = keyCodes[optionNumber - 1]
-            let src = CGEventSource(stateID: .hidSystemState)
-            let down = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: true)
-            let up   = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: false)
-            down?.post(tap: .cgSessionEventTap)
-            up?.post(tap: .cgSessionEventTap)
-            print("[AgentStatusManager] CGEvent sent \(optionNumber) to session tap")
-            await MainActor.run { self.dismissPendingInteraction() }
-        }
-    }
-
-    private func ttyPath(forPid pid: Int32) -> String? {
-        var kinfo = kinfo_proc()
-        var size = MemoryLayout<kinfo_proc>.size
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
-        guard sysctl(&mib, 4, &kinfo, &size, nil, 0) == 0 else { return nil }
-        let ttydev = kinfo.kp_eproc.e_tdev
-        guard ttydev != 0 && ttydev != UInt32(bitPattern: -1) else { return nil }
-        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: "/dev") else { return nil }
-        for entry in entries where entry.hasPrefix("ttys") {
-            let path = "/dev/" + entry
-            var st = stat()
-            guard stat(path, &st) == 0 else { continue }
-            if st.st_rdev == ttydev { return path }
-        }
-        return nil
-    }
-
-    private func waitForAppActivation(bundleId: String, timeout: TimeInterval = 2.0, completion: @escaping () -> Void) {
-        // Cancel any previous pending observer before registering a new one
-        if let existing = appActivationObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(existing)
-            appActivationObserver = nil
-        }
-        appActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let self,
-                  let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  app.bundleIdentifier == bundleId
-            else { return }
-            print("[AgentStatusManager] waitForAppActivation: \(bundleId) activated")
-            let obs = self.appActivationObserver
-            self.appActivationObserver = nil
-            if let obs { NSWorkspace.shared.notificationCenter.removeObserver(obs) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [completion] in
-                completion()
-            }
-        }
-        // Timeout fallback
-        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
-            guard let self, self.appActivationObserver != nil else { return }
-            print("[AgentStatusManager] waitForAppActivation: timeout waiting for \(bundleId)")
-            NSWorkspace.shared.notificationCenter.removeObserver(self.appActivationObserver!)
-            self.appActivationObserver = nil
-        }
-    }
-
-    private func sendDigitKeystroke(_ digit: Int, targetPid: pid_t? = nil) {
-        guard digit >= 1 && digit <= 9 else { return }
-        let keyCodes: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
-        let keyCode = keyCodes[digit - 1]
-        let src = CGEventSource(stateID: .hidSystemState)
-        let down = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: true)
-        let up   = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: false)
-        if let pid = targetPid {
-            down?.postToPid(pid)
-            up?.postToPid(pid)
-            print("[AgentStatusManager] sendDigitKeystroke: sent \(digit) to pid=\(pid)")
-        } else {
-            down?.post(tap: .cgSessionEventTap)
-            up?.post(tap: .cgSessionEventTap)
-            print("[AgentStatusManager] sendDigitKeystroke: sent \(digit) to session")
-        }
-    }
-
-    private func activateWarpWindow(cwd: String?, terminal: NSRunningApplication) {
-        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: terminal.bundleIdentifier!) else { return }
-        let cwdName = cwd.map { URL(fileURLWithPath: $0).lastPathComponent } ?? ""
-        let config = NSWorkspace.OpenConfiguration()
-        config.activates = true
-        NSWorkspace.shared.openApplication(at: appURL, configuration: config) { [cwdName] _, error in
-            if let error {
-                print("[AgentStatusManager] activateWarpWindow NSWorkspace error: \(error)")
-                return
-            }
-            guard !cwdName.isEmpty else { return }
-            let script = """
-            tell application "System Events"
-                tell process "stable"
-                    repeat with w in every window
-                        if name of w contains "\(cwdName)" then
-                            perform action "AXRaise" of w
-                            set frontmost to true
-                            exit repeat
-                        end if
-                    end repeat
-                end tell
-            end tell
-            """
-            Task {
-                let result = await XPCHelperClient.shared.runAppleScript(script)
-                if let err = result.error {
-                    print("[AgentStatusManager] activateWarpWindow error: \(err)")
-                } else {
-                    print("[AgentStatusManager] activateWarpWindow: raised window for '\(cwdName)'")
-                }
-            }
-        }
-    }
     private func activateAppByURL(terminal: NSRunningApplication) {
         if let bundleId = terminal.bundleIdentifier,
            let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
@@ -267,42 +149,6 @@ final class AgentStatusManager: ObservableObject {
         } else {
             terminal.activate()
         }
-    }
-
-    // MARK: - Process helpers
-
-    private struct ProcInfo { let pid: Int32; let ppid: Int32 }
-
-    private func allProcesses() -> [ProcInfo] {
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
-        var size = 0
-        sysctl(&mib, 4, nil, &size, nil, 0)
-        let n = size / MemoryLayout<kinfo_proc>.stride
-        var procs = [kinfo_proc](repeating: kinfo_proc(), count: n)
-        var size2 = size
-        sysctl(&mib, 4, &procs, &size2, nil, 0)
-        let count = size2 / MemoryLayout<kinfo_proc>.stride
-        return (0..<count).map { i in
-            ProcInfo(pid: procs[i].kp_proc.p_pid, ppid: procs[i].kp_eproc.e_ppid)
-        }
-    }
-
-    private func tty(forPid pid: Int32) -> String? {
-        var kinfo = kinfo_proc()
-        var size = MemoryLayout<kinfo_proc>.size
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
-        guard sysctl(&mib, 4, &kinfo, &size, nil, 0) == 0 else { return nil }
-        let ttydev = kinfo.kp_eproc.e_tdev
-        guard ttydev != 0 && ttydev != UInt32(bitPattern: -1) else { return nil }
-        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: "/dev") else { return nil }
-        for entry in entries where entry.hasPrefix("ttys") {
-            let path = "/dev/" + entry
-            let attrs = try? FileManager.default.attributesOfItem(atPath: path)
-            if let devNum = attrs?[.deviceIdentifier] as? Int, UInt32(devNum) == ttydev {
-                return entry
-            }
-        }
-        return nil
     }
 
     private func terminalRunningApp(forPid pid: Int) -> NSRunningApplication? {

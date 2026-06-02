@@ -25,5 +25,7 @@ import Foundation
     // Run an AppleScript source string (no Accessibility required)
     func runAppleScript(_ source: String, with reply: @escaping (Bool, String?) -> Void)
     func writeToTty(_ ttyPath: String, byte: Int32, with reply: @escaping (Bool, String?) -> Void)
+    // Query Warp's SQLite DB (unsandboxed) to get 1-based tab index for a claude pid
+    func warpTabIndex(forClaudePid claudePid: Int32, with reply: @escaping (Int32) -> Void)
 }
 

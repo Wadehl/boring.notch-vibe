@@ -10,6 +10,7 @@ import ApplicationServices
 import IOKit
 import CoreGraphics
 import AppKit
+import SQLite3
 
 class BoringNotchXPCHelper: NSObject, BoringNotchXPCHelperProtocol {
     
@@ -243,7 +244,7 @@ class BoringNotchXPCHelper: NSObject, BoringNotchXPCHelperProtocol {
         default: appName = bundleId
         }
 
-        let script = """
+        let _ = """
         tell application "\(appName)"
             activate
         end tell
@@ -306,6 +307,86 @@ class BoringNotchXPCHelper: NSObject, BoringNotchXPCHelperProtocol {
         } else {
             reply(true, nil)
         }
+    }
+
+    @objc func warpTabIndex(forClaudePid claudePid: Int32, with reply: @escaping (Int32) -> Void) {
+        // Read WARP_TERMINAL_SESSION_UUID from the claude process environment via KERN_PROCARGS2.
+        // Claude inherits this UUID from its parent zsh, which Warp injects per-pane at launch.
+        // The UUID matches terminal_panes.uuid (stored as blob) in warp.sqlite, giving us
+        // an exact, drag-order-stable mapping without any user-side hook files.
+        if let uuid = warpSessionUUID(ofPid: claudePid),
+           let tabIndex = warpTabIndexForUUID(uuid) {
+            print("[XPCHelper] uuid=\(uuid) → tab_index=\(tabIndex)")
+            reply(tabIndex)
+            return
+        }
+        print("[XPCHelper] could not resolve tab index for claudePid=\(claudePid)")
+        reply(-1)
+    }
+
+    // Read WARP_TERMINAL_SESSION_UUID from a process's environment via KERN_PROCARGS2.
+    private func warpSessionUUID(ofPid pid: Int32) -> String? {
+        var mib: [Int32] = [1, 49, pid]  // CTL_KERN=1, KERN_PROCARGS2=49
+        var size = 0
+        sysctl(&mib, 3, nil, &size, nil, 0)
+        guard size > 50 else { return nil }
+        var buf = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0 else { return nil }
+
+        // Layout: argc (Int32) | exec_path\0 | \0*padding | argv[0..argc-1] | env[0..]
+        var pos = 4
+        let data = buf[..<size]
+        // skip exec path
+        while pos < size && data[pos] != 0 { pos += 1 }
+        pos += 1
+        // skip null padding
+        while pos < size && data[pos] == 0 { pos += 1 }
+        // skip argc argv strings (argc stored in first 4 bytes, little-endian)
+        let argc = Int(buf[0]) | Int(buf[1]) << 8 | Int(buf[2]) << 16 | Int(buf[3]) << 24
+        for _ in 0..<argc {
+            while pos < size && data[pos] != 0 { pos += 1 }
+            pos += 1
+        }
+        // parse env strings
+        while pos < size {
+            var end = pos
+            while end < size && data[end] != 0 { end += 1 }
+            if end == pos { pos += 1; continue }
+            if let str = String(bytes: data[pos..<end], encoding: .utf8),
+               str.hasPrefix("WARP_TERMINAL_SESSION_UUID=") {
+                return String(str.dropFirst("WARP_TERMINAL_SESSION_UUID=".count))
+            }
+            pos = end + 1
+        }
+        return nil
+    }
+
+    // Query warp.sqlite for the 1-based tab_index of the pane whose uuid matches the given session UUID.
+    private func warpTabIndexForUUID(_ uuid: String) -> Int32? {
+        guard let pw = getpwuid(getuid()), let dir = pw.pointee.pw_dir else { return nil }
+        let home = String(cString: dir)
+        let dbPath = "\(home)/Library/Group Containers/2BBY89MBSN.dev.warp/Library/Application Support/dev.warp.Warp-Stable/warp.sqlite"
+
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_close(db) }
+
+        let sql = """
+            SELECT (SELECT COUNT(*) FROM tabs t2
+                    WHERE t2.window_id = t.window_id AND t2.id < t.id) AS tab_index
+            FROM terminal_panes tp
+            JOIN pane_leaves pl ON pl.pane_node_id = tp.id
+            JOIN pane_nodes pn ON pn.id = pl.pane_node_id
+            JOIN tabs t ON t.id = pn.tab_id
+            WHERE lower(hex(tp.uuid)) = lower(replace(?, '-', ''))
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+
+        sqlite3_bind_text(stmt, 1, (uuid as NSString).utf8String, -1, nil)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+        return Int32(sqlite3_column_int(stmt, 0)) + 1  // 0-based → 1-based
     }
 
     // MARK: - Helper handle for private framework

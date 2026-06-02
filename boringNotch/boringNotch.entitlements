@@ -41,5 +41,9 @@
 		<string>/.codex/logs_2.sqlite-wal</string>
 		<string>/.codex/session_index.jsonl</string>
 	</array>
+	<key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
+	<array>
+		<string>/Users/kevinkwok/Library/Group Containers/2BBY89MBSN.dev.warp/</string>
+	</array>
 </dict>
 </plist>

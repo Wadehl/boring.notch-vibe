@@ -189,6 +189,22 @@ final class XPCHelperClient: NSObject {
         }
     }
 
+    // MARK: - Warp tab lookup (unsandboxed)
+
+    nonisolated func warpTabIndex(forClaudePid claudePid: Int) async -> Int {
+        do {
+            let service = await MainActor.run { ensureRemoteService() }
+            let result: Int32 = try await service.withContinuation { service, continuation in
+                service.warpTabIndex(forClaudePid: Int32(claudePid)) { idx in
+                    continuation.resume(returning: idx)
+                }
+            }
+            return Int(result)
+        } catch {
+            return -1
+        }
+    }
+
     // MARK: - Keyboard Brightness
     
     nonisolated func isKeyboardBrightnessAvailable() async -> Bool {

@@ -115,6 +115,8 @@
 		9A987A0D2C73CA66005CA465 /* ShelfView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A987A032C73CA66005CA465 /* ShelfView.swift */; };
 		9A987A102C73CA8D005CA465 /* Collections in Frameworks */ = {isa = PBXBuildFile; productRef = 9A987A0F2C73CA8D005CA465 /* Collections */; };
 		9AB0C6BD2C73C9CB00F7CD30 /* NotchHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AB0C6BB2C73C9CB00F7CD30 /* NotchHomeView.swift */; };
+		AA000002AA000002AA000002 /* AgentStatusManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AA000001AA000001 /* AgentStatusManager.swift */; };
+		AA000004AA000004AA000004 /* AgentStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000003AA000003AA000003 /* AgentStatusView.swift */; };
 		B10348D92C74E56000475897 /* ConditionalModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10348D82C74E56000475897 /* ConditionalModifier.swift */; };
 		B10F84A32C6C9596009F3026 /* TestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10F84A22C6C9596009F3026 /* TestView.swift */; };
 		B141C2412CA5F53F00AC8CC8 /* SparkleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B141C2402CA5F53E00AC8CC8 /* SparkleView.swift */; };
@@ -139,16 +141,19 @@
 		B1D365CE2C6A979C0047BDBC /* LiveActivityModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1D365CD2C6A979C0047BDBC /* LiveActivityModifier.swift */; };
 		B1D365D02C6A9A6C0047BDBC /* SystemEventIndicatorModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1D365CF2C6A9A6C0047BDBC /* SystemEventIndicatorModifier.swift */; };
 		B1D6FD432C6603730015F173 /* SoftwareUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1D6FD422C6603730015F173 /* SoftwareUpdater.swift */; };
-		BB000002BB000002BB000002 /* AgentDebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000001BB000001BB000001 /* AgentDebugView.swift */; };
 		B1F0A0022E60000100000001 /* BrightnessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1F0A0012E60000100000001 /* BrightnessManager.swift */; };
 		B1F747F92EC7E94000F841DB /* LottieView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1F747F82EC7E94000F841DB /* LottieView.swift */; };
 		B1FEB4992C7686630066EBBC /* PanGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1FEB4982C7686630066EBBC /* PanGesture.swift */; };
-		F38DE6482D8243E7008B5C6D /* BatteryActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F38DE6472D8243E2008B5C6D /* BatteryActivityManager.swift */; };
-		AA000002AA000002AA000002 /* AgentStatusManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AA000001AA000001 /* AgentStatusManager.swift */; };
-		AA000004AA000004AA000004 /* AgentStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000003AA000003AA000003 /* AgentStatusView.swift */; };
+		BB000002BB000002BB000002 /* AgentDebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000001BB000001BB000001 /* AgentDebugView.swift */; };
 		CC000002CC000002CC000002 /* AgentClosedNotchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000001CC000001CC000001 /* AgentClosedNotchView.swift */; };
 		DD000002DD000002DD000002 /* AgentInteractionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000001DD000001DD000001 /* AgentInteractionView.swift */; };
-
+		E14BAAAC2FCE78EF00C2DAE3 /* TerminalAppController 2.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14BAAA92FCE78EF00C2DAE3 /* TerminalAppController 2.swift */; };
+		E14BAAAD2FCE78EF00C2DAE3 /* TerminalController 2.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14BAAAA2FCE78EF00C2DAE3 /* TerminalController 2.swift */; };
+		E14BAAAE2FCE78EF00C2DAE3 /* WarpController 2.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14BAAAB2FCE78EF00C2DAE3 /* WarpController 2.swift */; };
+		E14BAAAF2FCE78EF00C2DAE3 /* TerminalAppController 2.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14BAAA92FCE78EF00C2DAE3 /* TerminalAppController 2.swift */; };
+		E14BAAB02FCE78EF00C2DAE3 /* TerminalController 2.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14BAAAA2FCE78EF00C2DAE3 /* TerminalController 2.swift */; };
+		E14BAAB12FCE78EF00C2DAE3 /* WarpController 2.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14BAAAB2FCE78EF00C2DAE3 /* WarpController 2.swift */; };
+		F38DE6482D8243E7008B5C6D /* BatteryActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F38DE6472D8243E2008B5C6D /* BatteryActivityManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -290,6 +295,8 @@
 		9A0887342C7AFF8E00C160EA /* TabSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSelectionView.swift; sourceTree = "<group>"; };
 		9A987A032C73CA66005CA465 /* ShelfView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ShelfView.swift; sourceTree = "<group>"; };
 		9AB0C6BB2C73C9CB00F7CD30 /* NotchHomeView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = NotchHomeView.swift; sourceTree = "<group>"; };
+		AA000001AA000001AA000001 /* AgentStatusManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentStatusManager.swift; sourceTree = "<group>"; };
+		AA000003AA000003AA000003 /* AgentStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentStatusView.swift; sourceTree = "<group>"; };
 		B10348D82C74E56000475897 /* ConditionalModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConditionalModifier.swift; sourceTree = "<group>"; };
 		B10F84A22C6C9596009F3026 /* TestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestView.swift; sourceTree = "<group>"; };
 		B141C2402CA5F53E00AC8CC8 /* SparkleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SparkleView.swift; sourceTree = "<group>"; };
@@ -311,16 +318,16 @@
 		B1D365CD2C6A979C0047BDBC /* LiveActivityModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityModifier.swift; sourceTree = "<group>"; };
 		B1D365CF2C6A9A6C0047BDBC /* SystemEventIndicatorModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemEventIndicatorModifier.swift; sourceTree = "<group>"; };
 		B1D6FD422C6603730015F173 /* SoftwareUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftwareUpdater.swift; sourceTree = "<group>"; };
-		BB000001BB000001BB000001 /* AgentDebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDebugView.swift; sourceTree = "<group>"; };
 		B1F0A0012E60000100000001 /* BrightnessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessManager.swift; sourceTree = "<group>"; };
 		B1F747F82EC7E94000F841DB /* LottieView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LottieView.swift; sourceTree = "<group>"; };
 		B1FEB4982C7686630066EBBC /* PanGesture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanGesture.swift; sourceTree = "<group>"; };
-		F38DE6472D8243E2008B5C6D /* BatteryActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryActivityManager.swift; sourceTree = "<group>"; };
-		AA000001AA000001AA000001 /* AgentStatusManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentStatusManager.swift; sourceTree = "<group>"; };
-		AA000003AA000003AA000003 /* AgentStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentStatusView.swift; sourceTree = "<group>"; };
+		BB000001BB000001BB000001 /* AgentDebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDebugView.swift; sourceTree = "<group>"; };
 		CC000001CC000001CC000001 /* AgentClosedNotchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentClosedNotchView.swift; sourceTree = "<group>"; };
 		DD000001DD000001DD000001 /* AgentInteractionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInteractionView.swift; sourceTree = "<group>"; };
-
+		E14BAAA92FCE78EF00C2DAE3 /* TerminalAppController 2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAppController.swift; sourceTree = "<group>"; };
+		E14BAAAA2FCE78EF00C2DAE3 /* TerminalController 2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalController.swift; sourceTree = "<group>"; };
+		E14BAAAB2FCE78EF00C2DAE3 /* WarpController 2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WarpController.swift; sourceTree = "<group>"; };
+		F38DE6472D8243E2008B5C6D /* BatteryActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryActivityManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -531,6 +538,9 @@
 				14C08BB52C8DE42D000F8AA0 /* CalendarManager.swift */,
 				B1F0A0012E60000100000001 /* BrightnessManager.swift */,
 				59D8C23B2E589FAA00147B33 /* VolumeManager.swift */,
+				E14BAAA92FCE78EF00C2DAE3 /* TerminalAppController 2.swift */,
+				E14BAAAA2FCE78EF00C2DAE3 /* TerminalController 2.swift */,
+				E14BAAAB2FCE78EF00C2DAE3 /* WarpController 2.swift */,
 			);
 			path = managers;
 			sourceTree = "<group>";
@@ -1004,6 +1014,9 @@
 				507266DB2C908E2E00A2D00D /* HoverButton.swift in Sources */,
 				1471A8592C6281BD0058408D /* BoringNotchWindow.swift in Sources */,
 				14CEF4182C5CAED300855D72 /* ContentView.swift in Sources */,
+				E14BAAAC2FCE78EF00C2DAE3 /* TerminalAppController 2.swift in Sources */,
+				E14BAAAD2FCE78EF00C2DAE3 /* TerminalController 2.swift in Sources */,
+				E14BAAAE2FCE78EF00C2DAE3 /* WarpController 2.swift in Sources */,
 				9A987A0D2C73CA66005CA465 /* ShelfView.swift in Sources */,
 				1132E5142E777B920068732D /* YouTubeMusicNetworking.swift in Sources */,
 				1132E5122E777B6E0068732D /* YouTubeMusicModels.swift in Sources */,
