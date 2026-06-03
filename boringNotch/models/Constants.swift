@@ -199,4 +199,8 @@ extension Defaults.Keys {
     }
 
     static let didClearLegacyURLCacheV1 = Key<Bool>("didClearLegacyURLCache_v1", default: false)
+
+    // Claude Code 提示 - 实验性 Beta 功能
+    // 开启后自动向终端发送按键；关闭则仅聚焦终端，由用户手动操作
+    static let claudeCodeAutoInput = Key<Bool>("claudeCodeAutoInput", default: false)
 }

@@ -64,7 +64,7 @@ struct SettingsView: View {
                     Label("About", systemImage: "info.circle")
                 }
                 NavigationLink(value: "AgentDebug") {
-                    Label("Agent Debug", systemImage: "ant.circle")
+                    Label("ClaudeCode 提示", systemImage: "terminal")
                 }
             }
             .listStyle(SidebarListStyle())

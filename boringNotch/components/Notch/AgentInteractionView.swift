@@ -111,9 +111,26 @@ struct AgentInteractionView: View {
                 } else {
                     optionChips
                 }
+                if interaction.type == .permission {
+                    permissionModeHint
+                }
             }
 
             clickHint
+        }
+    }
+
+    @ViewBuilder
+    private var permissionModeHint: some View {
+        let count = interaction.options.count
+        if count >= 3 {
+            Label("已识别 always allow 选项（可能存在选项数量差异）", systemImage: "exclamationmark.triangle")
+                .font(.system(size: 9.5))
+                .foregroundColor(.yellow.opacity(0.75))
+        } else {
+            Label("仅 Yes / No 模式", systemImage: "checkmark.shield")
+                .font(.system(size: 9.5))
+                .foregroundColor(.white.opacity(0.45))
         }
     }
 

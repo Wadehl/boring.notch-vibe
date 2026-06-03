@@ -3,10 +3,12 @@
 //  boringNotch
 //
 
+import Defaults
 import SwiftUI
 
 struct AgentDebugView: View {
     @ObservedObject var manager = AgentStatusManager.shared
+    @Default(.claudeCodeAutoInput) var autoInput
     @State private var refreshID = UUID()
 
     private static var realHome: String {
@@ -18,28 +20,73 @@ struct AgentDebugView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // Header
-                HStack {
-                    Text("Agent Status Debug")
-                        .font(.title2).bold()
-                    Spacer()
-                    Button("Refresh") {
-                        refreshID = UUID()
+            VStack(alignment: .leading, spacing: 20) {
+
+                // Beta toggle
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Text("ClaudeCode 提示")
+                            .font(.title2).bold()
+                        Text("Beta")
+                            .font(.caption2).bold()
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.orange)
+                            .clipShape(Capsule())
                     }
-                    .buttonStyle(.bordered)
+
+                    Text("在 notch 中拦截 Claude Code 的权限请求，并提供快捷选项。")
+                        .font(.callout)
+                        .foregroundColor(.secondary)
+
+                    Divider()
+
+                    Toggle(isOn: $autoInput) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("自动输入（实验性）")
+                                .font(.body)
+                            Text("开启后点击选项会自动向终端发送按键。关闭则仅聚焦终端，由你手动输入。")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+
+                    if autoInput {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                            Text("自动输入功能仍在实验阶段，在选项数量与 CC 不一致时可能发送错误按键，请留意 notch 中的错位提示。")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(10)
+                        .background(Color.orange.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
                 }
 
                 Divider()
 
-                // Raw sessions
+                // Debug info
                 Group {
+                    HStack {
+                        Text("运行状态").font(.headline)
+                        Spacer()
+                        Button("刷新") { refreshID = UUID() }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
+
                     Text("Active Sessions (\(manager.sessions.count))")
-                        .font(.headline)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
 
                     if manager.sessions.isEmpty {
-                        Text("No sessions detected")
+                        Text("未检测到 Claude Code 会话")
                             .foregroundColor(.secondary)
+                            .font(.caption)
                             .padding(.vertical, 4)
                     } else {
                         ForEach(manager.sessions) { session in
@@ -50,12 +97,11 @@ struct AgentDebugView: View {
 
                 Divider()
 
-                // Data source paths
                 Group {
-                    Text("Data Sources").font(.headline)
+                    Text("数据源").font(.headline)
 
                     dataSourceRow(
-                        label: "Claude sessions dir",
+                        label: "Claude sessions",
                         path: "~/.claude/sessions/",
                         exists: FileManager.default.fileExists(
                             atPath: Self.realHome + "/.claude/sessions")
@@ -67,43 +113,11 @@ struct AgentDebugView: View {
                             atPath: Self.realHome + "/.codex/logs_2.sqlite")
                     )
                 }
-
-                Divider()
-
-                // Raw file listing
-                Group {
-                    Text("Claude Session Files").font(.headline)
-                    let sessionDir = URL(fileURLWithPath: Self.realHome + "/.claude/sessions")
-                    let result = Result { try FileManager.default.contentsOfDirectory(at: sessionDir, includingPropertiesForKeys: nil) }
-                    switch result {
-                    case .failure(let err):
-                        Text("Error: \(err.localizedDescription)")
-                            .font(.caption).foregroundColor(.red)
-                    case .success(let files) where files.isEmpty:
-                        Text("Directory exists but is empty").foregroundColor(.secondary)
-                    case .success(let files):
-                        ForEach(files, id: \.path) { file in
-                            if let data = try? Data(contentsOf: file),
-                               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(file.lastPathComponent).font(.caption).bold()
-                                    Text("pid: \(json["pid"] as? Int ?? -1)  status: \(json["status"] as? String ?? "?")")
-                                        .font(.caption).foregroundColor(.secondary)
-                                    Text("cwd: \((json["cwd"] as? String ?? "").split(separator: "/").last.map(String.init) ?? "")")
-                                        .font(.caption).foregroundColor(.secondary)
-                                }
-                                .padding(8)
-                                .background(Color.secondary.opacity(0.1))
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                            }
-                        }
-                    }
-                }
             }
             .padding()
         }
         .id(refreshID)
-        .navigationTitle("Agent Debug")
+        .navigationTitle("ClaudeCode 提示")
     }
 
     private func sessionCard(_ session: AgentSession) -> some View {

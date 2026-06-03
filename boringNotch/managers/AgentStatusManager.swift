@@ -4,6 +4,7 @@
 //
 
 import Combine
+import Defaults
 import Foundation
 import SQLite3
 import AppKit
@@ -120,6 +121,15 @@ final class AgentStatusManager: ObservableObject {
         guard let terminal = terminalRunningApp(forPid: claudePid) else { return }
         let bundleId = terminal.bundleIdentifier ?? ""
         let digit = optionIndex + 1
+
+        // Beta feature gate: auto-input must be enabled, otherwise just focus the terminal.
+        guard Defaults[.claudeCodeAutoInput] else {
+            focusTerminal(claudePid: claudePid, sessionId: sessionId, dismissOnSuccess: true)
+            if let snap = interactionSnapshot {
+                startOptionMismatchMonitor(interaction: snap, selectedIndex: optionIndex)
+            }
+            return
+        }
 
         if bundleId == "com.apple.Terminal" {
             guard AXIsProcessTrusted() else {
