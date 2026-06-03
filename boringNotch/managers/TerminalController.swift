@@ -13,10 +13,42 @@ class TerminalController {
     }
 
     /// Bring the terminal window that owns `claudePid` to the front.
-    /// - Parameter claudePid: PID of the claude process running inside the terminal.
+    /// Uses NSWorkspace.openApplication so minimized windows are restored.
     func activate(claudePid: Int) {
-        guard let app = runningApp() else { return }
-        app.activate()
+        bringToFront {}
+    }
+
+    /// Activate the app (restoring minimized windows), then call `block` once frontmost.
+    /// Polls `isActive` for up to 1 second before giving up.
+    func activateThenRun(block: @escaping () -> Void) {
+        bringToFront {
+            var attempts = 0
+            func poll() {
+                attempts += 1
+                let active = NSWorkspace.shared.runningApplications
+                    .first { $0.bundleIdentifier == self.bundleIdentifier }?.isActive ?? false
+                if active || attempts >= 20 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { block() }
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { poll() }
+                }
+            }
+            poll()
+        }
+    }
+
+    // NSWorkspace.openApplication restores minimized windows; plain activate() does not.
+    private func bringToFront(completion: @escaping () -> Void) {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
+            runningApp()?.activate()
+            completion()
+            return
+        }
+        let cfg = NSWorkspace.OpenConfiguration()
+        cfg.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: cfg) { _, _ in
+            DispatchQueue.main.async { completion() }
+        }
     }
 
     /// Send a single-digit keystroke (1-9) to the terminal after it is frontmost.

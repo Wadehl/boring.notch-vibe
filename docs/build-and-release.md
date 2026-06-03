@@ -45,6 +45,21 @@ rm -rf "$STAGING" && mkdir "$STAGING"
 cp -R "$APP" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 
+# 写入 Install Helper.command（双击移除 Gatekeeper 隔离）
+cat > "$STAGING/Install Helper.command" << 'EOF'
+#!/bin/bash
+APP="/Applications/boringNotch.app"
+if [ ! -d "$APP" ]; then
+  echo "未找到 $APP，请先将 boringNotch.app 拖入 Applications 文件夹。"
+  read -p "按 Enter 退出..."
+  exit 1
+fi
+xattr -cr "$APP"
+echo "✅ 完成！可以双击启动 boringNotch 了。"
+read -p "按 Enter 退出..."
+EOF
+chmod +x "$STAGING/Install Helper.command"
+
 hdiutil create \
   -volname "boringNotchVibe" \
   -srcfolder "$STAGING" \
@@ -65,15 +80,10 @@ rm -rf /tmp/boringNotch-build
 ## 用户安装说明
 
 1. 打开 DMG，将 `boringNotch.app` 拖入 Applications
-2. 首次启动前，在终端执行以下命令移除 Gatekeeper 隔离标记：
-
-```bash
-xattr -cr /Applications/boringNotch.app
-```
-
+2. 双击 DMG 内的 **`Install Helper.command`**，Terminal 会自动移除 Gatekeeper 隔离
 3. 双击启动即可
 
-> **为什么需要这一步？** 应用使用 ad-hoc 签名（无 Apple Developer 账号），macOS Gatekeeper 会隔离从网络下载的未公证应用。`xattr -cr` 移除隔离属性后即可正常运行。
+> **为什么需要这一步？** 应用使用 ad-hoc 签名（无 Apple Developer 账号），macOS Gatekeeper 会隔离从网络下载的未公证应用。`Install Helper.command` 内部执行 `xattr -cr` 移除隔离属性。
 
 ## 一键构建脚本
 
@@ -94,6 +104,19 @@ STAGING="/tmp/boringNotchVibe-staging" && \
 rm -rf "$STAGING" && mkdir "$STAGING" && \
 cp -R "$APP_BUILD" "$STAGING/" && \
 ln -s /Applications "$STAGING/Applications" && \
+cat > "$STAGING/Install Helper.command" << 'HELPER'
+#!/bin/bash
+APP="/Applications/boringNotch.app"
+if [ ! -d "$APP" ]; then
+  echo "未找到 $APP，请先将 boringNotch.app 拖入 Applications 文件夹。"
+  read -p "按 Enter 退出..."
+  exit 1
+fi
+xattr -cr "$APP"
+echo "✅ 完成！可以双击启动 boringNotch 了。"
+read -p "按 Enter 退出..."
+HELPER
+chmod +x "$STAGING/Install Helper.command" && \
 hdiutil create \
   -volname "boringNotchVibe" \
   -srcfolder "$STAGING" \

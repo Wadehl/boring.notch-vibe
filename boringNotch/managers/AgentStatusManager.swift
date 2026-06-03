@@ -150,13 +150,11 @@ final class AgentStatusManager: ObservableObject {
         let digits = optionIndices.map { $0 + 1 }
 
         if bundleId.hasPrefix("dev.warp.") {
-            // Activate warp tab, then send all digits in sequence
+            // Activate warp tab (restoring if minimized), then send all digits in sequence
             Task {
                 let index = await XPCHelperClient.shared.warpTabIndex(forClaudePid: claudePid)
                 await MainActor.run {
-                    guard let app = self.warpController.runningApp() else { return }
-                    app.activate()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self.warpController.activateThenRun {
                         if index > 0 { self.warpController.sendTabSwitch(index: index) }
                         var delay = index > 0 ? 0.3 : 0.0
                         for digit in digits {
@@ -793,138 +791,147 @@ final class AgentStatusManager: ObservableObject {
     /// Builds permission option labels matching Claude Code's rK4 / fK4 logic exactly.
     /// File tools (Write/Edit/Read/NotebookEdit) use rK4; Bash uses fK4.
     private func permissionOptions(toolName: String, input: [String: Any], cwd: String) -> [PendingInteractionOption] {
-        let fileTools: Set<String> = ["Write", "Edit", "NotebookEdit", "Read"]
-        let bashTools: Set<String> = ["Bash"]
-
-        var opts: [PendingInteractionOption] = []
-        opts.append(PendingInteractionOption(label: "Yes", description: "Allow once", keystrokeText: "y"))
+        let yes = PendingInteractionOption(label: "Yes", description: "Allow once", keystrokeText: "y")
+        let no  = PendingInteractionOption(label: "No",  description: "Deny",       keystrokeText: "n")
 
         if toolName == "WebFetch" {
-            // WebFetch has its own permission UI: Yes / Yes, and don't ask again for <domain> / No
+            // CC always shows 3 options for WebFetch: Yes / Yes don't ask domain / No
             let url = input["url"] as? String ?? ""
             if let host = URL(string: url)?.host, !host.isEmpty {
-                opts.append(PendingInteractionOption(
+                let always = PendingInteractionOption(
                     label: "Yes, and don't ask again for \(host)",
                     description: "Always allow this domain",
                     keystrokeText: "a"
-                ))
+                )
+                return [yes, always, no]
             }
-            opts.append(PendingInteractionOption(label: "No, and tell Claude what to do differently", description: "Deny", keystrokeText: "n"))
-        } else if fileTools.contains(toolName) {
-            let filePath = (input["file_path"] as? String) ?? (input["notebook_path"] as? String) ?? ""
-            let opType: String = toolName == "Read" ? "read" : "write"
-            let option2 = filePermissionOption2(filePath: filePath, operationType: opType, cwd: cwd)
-            opts.append(option2)
-            opts.append(PendingInteractionOption(label: "No", description: "Deny", keystrokeText: "n"))
-        } else if bashTools.contains(toolName) {
+            return [yes, no]
+        }
+
+        if toolName == "Bash" {
             let command = input["command"] as? String ?? ""
-            if let option2 = bashPermissionOption2(command: command, cwd: cwd) {
-                opts.append(option2)
-            }
-            opts.append(PendingInteractionOption(label: "No", description: "Deny", keystrokeText: "n"))
-        } else {
-            // MCP tool or unknown tool
-            let displayName = formatMcpToolName(toolName)
-            let claudeDir = (cwd as NSString).appendingPathComponent(".claude")
-            opts.append(PendingInteractionOption(
-                label: "Yes, and don't ask again for \(displayName) commands in \(claudeDir)",
-                description: "Always allow this MCP tool",
-                keystrokeText: "a"
-            ))
-            opts.append(PendingInteractionOption(label: "No", description: "Deny", keystrokeText: "n"))
+            let prefix = bashCommandPrefix(command)
+            // CC always generates a suggestion for Bash (falls back to full command)
+            let label = prefix != nil
+                ? "Yes, and don't ask again for \(prefix!) *"
+                : "Yes, and don't ask again for \(command.prefix(60))"
+            let always = PendingInteractionOption(label: label, description: "Always allow", keystrokeText: "a")
+            return [yes, always, no]
         }
 
-        return opts
-    }
+        // File tools: CC's permissionOptions.tsx always returns 3 options.
+        // Option 2 label varies by path context (inside/outside cwd, .claude/ folder, read vs write).
+        let fileTools: Set<String> = ["Write", "Edit", "NotebookEdit", "Read"]
+        if fileTools.contains(toolName) {
+            let rawPath = (input["file_path"] as? String)
+                ?? (input["notebook_path"] as? String)
+                ?? ""
+            let filePath = (rawPath as NSString).expandingTildeInPath
+            let operationType = toolName == "Read" ? "read" : "write"
 
-    /// Mirrors rK4's option-2 logic for file-based tools.
-    private func filePermissionOption2(filePath: String, operationType: String, cwd: String) -> PendingInteractionOption {
-        let isRead = operationType == "read"
+            let sessionLabel: String
+            let claudeFolderSuffix = "/.claude/"
+            let globalClaudeFolder = (("~/.claude") as NSString).expandingTildeInPath
 
-        // Is file inside .claude/ config folder?
-        let homeStr = Self.realHomeURL.path
-        let claudeFolder = homeStr + "/.claude"
-        if filePath.hasPrefix(claudeFolder) && !isRead {
-            return PendingInteractionOption(
-                label: "Yes, and allow Claude to edit its own settings for this session",
-                description: "Accept session for .claude folder",
-                keystrokeText: "a"
-            )
-        }
+            let inClaudeFolder = filePath.contains(claudeFolderSuffix)
+            let inGlobalClaudeFolder = filePath.hasPrefix(globalClaudeFolder + "/") || filePath == globalClaudeFolder
 
-        // Is file inside cwd (working directory)?
-        let cwdNorm = cwd.hasSuffix("/") ? cwd : cwd + "/"
-        if filePath.hasPrefix(cwdNorm) || filePath == cwd {
-            if isRead {
-                return PendingInteractionOption(label: "Yes, during this session", description: "Allow all reads this session", keystrokeText: "a")
+            if (inClaudeFolder || inGlobalClaudeFolder) && operationType != "read" {
+                sessionLabel = "Yes, and allow Claude to edit its own settings for this session"
             } else {
-                return PendingInteractionOption(label: "Yes, allow all edits during this session", description: "Allow all edits this session", keystrokeText: "a")
+                let normalizedCwd = cwd.hasSuffix("/") ? cwd : cwd + "/"
+                let inAllowedPath = !cwd.isEmpty && (filePath.hasPrefix(normalizedCwd) || filePath == cwd)
+                if inAllowedPath {
+                    sessionLabel = operationType == "read"
+                        ? "Yes, during this session"
+                        : "Yes, allow all edits during this session"
+                } else {
+                    let dirPath = (filePath as NSString).deletingLastPathComponent
+                    let dirName = (dirPath as NSString).lastPathComponent
+                    let displayDir = dirName.isEmpty ? filePath : dirName
+                    sessionLabel = operationType == "read"
+                        ? "Yes, allow reading from \(displayDir)/ during this session"
+                        : "Yes, allow all edits in \(displayDir)/ during this session"
+                }
             }
-        }
 
-        // File is outside cwd — show the directory name
-        let dir = (filePath as NSString).deletingLastPathComponent
-        let dirName = (dir as NSString).lastPathComponent.isEmpty ? dir : (dir as NSString).lastPathComponent
-        let displayDir = dirName.isEmpty ? "this directory" : dirName
-
-        if isRead {
-            return PendingInteractionOption(
-                label: "Yes, allow reading from \(displayDir)/ during this session",
-                description: "Allow reads from \(displayDir)",
+            let yesSession = PendingInteractionOption(
+                label: sessionLabel,
+                description: "Allow for this session",
                 keystrokeText: "a"
             )
-        } else {
-            return PendingInteractionOption(
-                label: "Yes, allow all edits in \(displayDir)/ during this session",
-                description: "Allow all edits in \(displayDir)",
-                keystrokeText: "a"
-            )
+            return [yes, yesSession, no]
         }
+
+        // Skill tool (SkillPermissionRequest): input["skill"] holds the skill name.
+        // CC shows up to 4 options: Yes / don't ask exact / don't ask prefix (if space) / No.
+        if toolName == "Skill" {
+            let skill = input["skill"] as? String ?? ""
+            var opts: [PendingInteractionOption] = [yes]
+            if !skill.isEmpty {
+                let exactLabel = "Yes, and don't ask again for \(skill) in \(cwd)"
+                opts.append(PendingInteractionOption(
+                    label: exactLabel, description: "Always allow this skill", keystrokeText: "a"
+                ))
+                // If skill has a space (e.g. "plugin arg"), add a prefix wildcard option
+                if let spaceIdx = skill.firstIndex(of: " "), spaceIdx != skill.startIndex {
+                    let commandPrefix = String(skill[skill.startIndex..<spaceIdx]) + ":*"
+                    let prefixLabel = "Yes, and don't ask again for \(commandPrefix) commands in \(cwd)"
+                    opts.append(PendingInteractionOption(
+                        label: prefixLabel, description: "Always allow this skill family", keystrokeText: "s"
+                    ))
+                }
+            }
+            opts.append(no)
+            return opts
+        }
+
+        // MCP / unknown tools (FallbackPermissionRequest): always 3 options.
+        // CC shows: Yes / "don't ask again for {toolName} commands in {cwd}" / No.
+        // Strip the " (MCP)" suffix that CC appends to userFacingName before stripping it.
+        let displayName = toolName.hasSuffix(" (MCP)") ? String(toolName.dropLast(6)) : toolName
+        let fallbackAlways = PendingInteractionOption(
+            label: "Yes, and don't ask again for \(displayName) commands in \(cwd)",
+            description: "Always allow this tool",
+            keystrokeText: "a"
+        )
+        return [yes, fallbackAlways, no]
     }
 
-    /// Mirrors fK4 + Py6's option-2 logic for Bash.
-    /// Bash option 2 is only shown when Claude Code has generated "suggestions"
-    /// (addRules/addDirectories). We approximate this by detecting if the command
-    /// reads from an outside absolute path as its *primary* target argument.
-    private func bashPermissionOption2(command: String, cwd: String) -> PendingInteractionOption? {
-        // Commands with -exec can modify files — Claude Code explicitly refuses to
-        // auto-allow these ("cannot be auto-allowed by a Bash(find:*) prefix rule").
-        if command.contains("-exec") { return nil }
-
-        let tokens = command.components(separatedBy: .whitespaces)
-        let cwdNorm = cwd.hasSuffix("/") ? cwd : cwd + "/"
-
-        // Flags whose *next* token is a value argument, not a target path.
-        // Scanning the value as a path would produce spurious option-2 entries.
-        let flagsWithValues: Set<String> = [
-            "-name", "-iname", "-newer", "-path", "-ipath", "-regex",
-            "-maxdepth", "-mindepth", "-type", "-user", "-group",
-            "-size", "-mtime", "-atime", "-ctime", "-perm",
-            "-o", "-and", "-or",
+    // Mirrors CC's uW6(): extract "cmd subcmd" prefix from a Bash command.
+    // Returns nil if the command starts with a shell wrapper (bash/sudo/xargs etc.)
+    // or if the subcommand token doesn't look like a simple word.
+    private func bashCommandPrefix(_ command: String) -> String? {
+        // Shells/wrappers that CC refuses to auto-allow by prefix
+        let blocked: Set<String> = [
+            "sh","bash","zsh","fish","csh","tcsh","ksh","dash","cmd","powershell","pwsh",
+            "env","xargs","command","builtin","noglob","nice","stdbuf","nohup","timeout",
+            "time","watch","ionice","chrt","setsid","taskset","strace","ltrace","script",
+            "flock","unshare","nsenter","sudo","doas","pkexec"
         ]
 
-        var skipNext = false
-        for token in tokens {
-            if skipNext { skipNext = false; continue }
-            if flagsWithValues.contains(token) { skipNext = true; continue }
-            // Skip flags themselves
-            if token.hasPrefix("-") { continue }
+        var tokens = command.trimmingCharacters(in: .whitespaces)
+            .components(separatedBy: .whitespaces)
+            .filter { !$0.isEmpty }
 
-            let t = token.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-            guard t.hasPrefix("/"), !t.hasPrefix(cwdNorm), t != cwd else { continue }
-
-            let parentDir = (t as NSString).deletingLastPathComponent
-            let dirName = (parentDir as NSString).lastPathComponent
-            let displayDir = dirName.isEmpty ? parentDir : dirName
-
-            return PendingInteractionOption(
-                label: "Yes, allow reading from \(displayDir)/ from this project",
-                description: "Allow reads from \(displayDir)",
-                keystrokeText: "a"
-            )
+        // Skip leading VAR=value tokens
+        while let first = tokens.first, first.contains("=") {
+            let varName = first.components(separatedBy: "=")[0]
+            // Only skip if it looks like a valid env var name
+            let validEnvVar = varName.range(of: "^[A-Za-z_][A-Za-z0-9_]*$", options: .regularExpression) != nil
+            guard validEnvVar else { break }
+            tokens.removeFirst()
         }
 
-        return nil
+        guard tokens.count >= 2 else { return nil }
+        let cmd = tokens[0]
+        let sub = tokens[1]
+
+        guard !blocked.contains(cmd) else { return nil }
+        // Subcommand must look like a simple kebab-case word (e.g. "run", "install", "build-dev")
+        guard sub.range(of: "^[a-z][a-z0-9]*(-[a-z0-9]+)*$", options: .regularExpression) != nil else { return nil }
+
+        return "\(cmd) \(sub)"
     }
 
     /// Builds a short question string summarising the tool call for display.

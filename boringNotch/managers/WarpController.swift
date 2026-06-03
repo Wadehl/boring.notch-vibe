@@ -13,18 +13,13 @@ final class WarpController: TerminalController {
 
     /// Activate Warp and switch to the tab matching claudePid.
     func activateTab(claudePid: Int) {
-        guard let app = runningApp() else {
-            print("[WarpController] activateTab: Warp not running")
-            return
-        }
         print("[WarpController] activateTab: claudePid=\(claudePid)")
-        app.activate()
         Task {
             let index = await XPCHelperClient.shared.warpTabIndex(forClaudePid: claudePid)
             print("[WarpController] activateTab: XPC returned tabIndex=\(index)")
-            guard index > 0 else { return }
             await MainActor.run {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                activateThenRun {
+                    guard index > 0 else { return }
                     print("[WarpController] activateTab: sending Cmd+\(index)")
                     self.sendTabSwitch(index: index)
                 }
@@ -34,25 +29,22 @@ final class WarpController: TerminalController {
 
     /// Activate the correct Warp tab then send the option digit keystroke.
     func activateAndSend(claudePid: Int, digit: Int, completion: @escaping () -> Void) {
-        guard let app = runningApp() else {
-            print("[WarpController] activateAndSend: Warp not running")
-            return
-        }
         print("[WarpController] activateAndSend: claudePid=\(claudePid) digit=\(digit)")
-        app.activate()
         Task {
             let index = await XPCHelperClient.shared.warpTabIndex(forClaudePid: claudePid)
             print("[WarpController] activateAndSend: XPC returned tabIndex=\(index)")
             await MainActor.run {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                activateThenRun {
                     if index > 0 {
                         print("[WarpController] sending Cmd+\(index) to switch tab")
                         self.sendTabSwitch(index: index)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            print("[WarpController] sending digit \(digit)")
+                            self.sendDigit(digit)
+                            completion()
+                        }
                     } else {
                         print("[WarpController] no valid tab index, skipping tab switch")
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        print("[WarpController] sending digit \(digit)")
                         self.sendDigit(digit)
                         completion()
                     }
