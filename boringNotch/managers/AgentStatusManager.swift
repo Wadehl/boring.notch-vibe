@@ -74,6 +74,7 @@ final class AgentStatusManager: ObservableObject {
 
     @Published private(set) var sessions: [AgentSession] = []
     @Published private(set) var pendingInteractions: [PendingInteraction] = []
+    @Published private(set) var permissionMismatchWarning: String? = nil
 
     // Keys of interactions the user has dismissed; suppressed until a new one arrives
     private var dismissedInteractionKeys: Set<String> = []
@@ -101,6 +102,21 @@ final class AgentStatusManager: ObservableObject {
 
     func selectOption(claudePid: Int, optionIndex: Int, sessionId: String? = nil) {
         print("[AgentStatusManager] selectOption index=\(optionIndex) claudePid=\(claudePid)")
+
+        // Snapshot interaction before dismissal for mismatch monitoring.
+        // Watch both "always allow" (index 1, 3-option) and "No" (last option) selections.
+        let interactionSnapshot: PendingInteraction? = {
+            guard let sid = sessionId,
+                  let interaction = pendingInteractions.first(where: { $0.sessionId == sid }),
+                  interaction.type == .permission,
+                  interaction.toolUseId != nil,
+                  interaction.cwd != nil,
+                  (optionIndex == 1 && interaction.options.count == 3) ||
+                  (optionIndex == interaction.options.count - 1)
+            else { return nil }
+            return interaction
+        }()
+
         guard let terminal = terminalRunningApp(forPid: claudePid) else { return }
         let bundleId = terminal.bundleIdentifier ?? ""
         let digit = optionIndex + 1
@@ -131,6 +147,10 @@ final class AgentStatusManager: ObservableObject {
             warpController.activateAndSend(claudePid: claudePid, digit: digit) {}
         } else {
             focusTerminal(claudePid: claudePid, sessionId: sessionId, dismissOnSuccess: false)
+        }
+
+        if let snap = interactionSnapshot {
+            startOptionMismatchMonitor(interaction: snap, selectedIndex: optionIndex)
         }
     }
 
@@ -781,15 +801,103 @@ final class AgentStatusManager: ObservableObject {
             options: options,
             multiSelect: false,
             planTitle: nil,
-            toolUseId: nil,
+            toolUseId: tool.id,
             assistantUuid: nil,
-            cwd: nil,
+            cwd: cwd,
             claudeVersion: nil
         )
     }
 
-    /// Builds permission option labels matching Claude Code's rK4 / fK4 logic exactly.
-    /// File tools (Write/Edit/Read/NotebookEdit) use rK4; Bash uses fK4.
+    // MARK: - Permission mismatch monitor
+
+    /// Monitors tool_result after a permission choice that might be misaligned with CC's actual option count.
+    ///
+    /// - selectedIndex 1 in a 3-option dialog ("always allow", sends digit 2):
+    ///   If CC only had 2 options, digit 2 = No → tool denied. Warn if result looks like denial.
+    /// - selectedIndex == last option ("No"):
+    ///   If CC had more options, digit N might map to Always instead of No → tool ran. Warn if result looks like execution.
+    private func startOptionMismatchMonitor(interaction: PendingInteraction, selectedIndex: Int) {
+        guard let toolUseId = interaction.toolUseId, let cwd = interaction.cwd else { return }
+        let sessionId = interaction.sessionId
+        let optionCount = interaction.options.count
+        let isAlways = selectedIndex == 1 && optionCount == 3
+        let isNo = selectedIndex == optionCount - 1
+        guard isAlways || isNo else { return }
+
+        var attempts = 0
+        let maxAttempts = 16   // 8 s at 500 ms intervals
+
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
+            attempts += 1
+            guard let self, attempts <= maxAttempts else { timer.invalidate(); return }
+            guard let result = self.findToolResult(sessionId: sessionId, toolUseId: toolUseId, cwd: cwd)
+            else { return }
+            timer.invalidate()
+
+            let warning: String?
+            if isAlways && self.looksLikeDenial(result) {
+                // Sent digit 2 for "always allow" but CC treated it as No
+                warning = "⚠️ 选项可能错位：CC 只有 2 个选项，'永远允许' 实际发送了 No，操作已被拒绝，请手动重试。"
+            } else if isNo && !self.looksLikeDenial(result) {
+                // Sent digit N for "No" but CC treated it as a middle option (always allow)
+                warning = "⚠️ 选项可能错位：CC 有更多选项，'No' 实际触发了执行，请检查操作结果。"
+            } else {
+                warning = nil
+            }
+
+            if let warning {
+                self.permissionMismatchWarning = warning
+                DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                    self?.permissionMismatchWarning = nil
+                }
+            }
+        }
+    }
+
+    /// Read the session JSONL and return the content string of the tool_result for the given toolUseId, if present.
+    private func findToolResult(sessionId: String, toolUseId: String, cwd: String) -> String? {
+        let encodedCwd = encodeCwd(cwd)
+        let jsonlFile = Self.realHomeURL
+            .appendingPathComponent(".claude/projects")
+            .appendingPathComponent(encodedCwd)
+            .appendingPathComponent("\(sessionId).jsonl")
+
+        guard let raw = try? String(contentsOf: jsonlFile, encoding: .utf8) else { return nil }
+
+        for line in raw.components(separatedBy: "\n").reversed() {
+            guard let data = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  obj["type"] as? String == "user",
+                  let message = obj["message"] as? [String: Any],
+                  let content = message["content"] as? [[String: Any]]
+            else { continue }
+
+            for item in content {
+                guard item["type"] as? String == "tool_result",
+                      item["tool_use_id"] as? String == toolUseId
+                else { continue }
+
+                if let text = item["content"] as? String { return text }
+                if let blocks = item["content"] as? [[String: Any]] {
+                    return blocks.compactMap { $0["text"] as? String }.joined(separator: "\n")
+                }
+                return ""
+            }
+        }
+        return nil
+    }
+
+    /// Heuristic: does this tool_result look like CC denied the request rather than executing it?
+    private func looksLikeDenial(_ content: String) -> Bool {
+        let lower = content.lowercased()
+        let denialKeywords = ["denied", "declined", "permission", "not allowed", "cancelled", "canceled", "refused", "rejected"]
+        if denialKeywords.contains(where: { lower.contains($0) }) { return true }
+        // Denial messages are short; real command output tends to be longer or empty (silent success)
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.count < 80 && !trimmed.isEmpty
+    }
+
+/// File tools (Write/Edit/Read/NotebookEdit) use rK4; Bash uses fK4.
     private func permissionOptions(toolName: String, input: [String: Any], cwd: String) -> [PendingInteractionOption] {
         let yes = PendingInteractionOption(label: "Yes", description: "Allow once", keystrokeText: "y")
         let no  = PendingInteractionOption(label: "No",  description: "Deny",       keystrokeText: "n")
