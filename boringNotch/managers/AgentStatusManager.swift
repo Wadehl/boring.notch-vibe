@@ -810,6 +810,10 @@ final class AgentStatusManager: ObservableObject {
 
         if toolName == "Bash" {
             let command = input["command"] as? String ?? ""
+            // CC sets suggestions:[] for multiline commands that trigger safety checks
+            // (e.g. "Newline followed by # inside a quoted argument"). Without suggestions,
+            // CC only shows Yes/No. Mirror that by skipping the always option for multiline commands.
+            guard !command.contains("\n") else { return [yes, no] }
             let prefix = bashCommandPrefix(command)
             // CC: ruleContent is "{prefix}:*" for prefix rules, or the exact command for direct rules.
             // Label: "Yes, and don't ask again for {ruleContent} commands in {cwd}"
