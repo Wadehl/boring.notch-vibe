@@ -811,10 +811,18 @@ final class AgentStatusManager: ObservableObject {
         if toolName == "Bash" {
             let command = input["command"] as? String ?? ""
             let prefix = bashCommandPrefix(command)
-            // CC always generates a suggestion for Bash (falls back to full command)
-            let label = prefix != nil
-                ? "Yes, and don't ask again for \(prefix!) *"
-                : "Yes, and don't ask again for \(command.prefix(60))"
+            // CC: ruleContent is "{prefix}:*" for prefix rules, or the exact command for direct rules.
+            // Label: "Yes, and don't ask again for {ruleContent} commands in {cwd}"
+            // Commands > 50 chars are shown as "similar" (matches generateShellSuggestionsLabel).
+            let ruleContent: String
+            if let prefix = prefix {
+                ruleContent = "\(prefix):*"
+            } else if command.count > 50 {
+                ruleContent = "similar"
+            } else {
+                ruleContent = command
+            }
+            let label = "Yes, and don't ask again for \(ruleContent) commands in \(cwd)"
             let always = PendingInteractionOption(label: label, description: "Always allow", keystrokeText: "a")
             return [yes, always, no]
         }
@@ -898,9 +906,11 @@ final class AgentStatusManager: ObservableObject {
         return [yes, fallbackAlways, no]
     }
 
-    // Mirrors CC's uW6(): extract "cmd subcmd" prefix from a Bash command.
-    // Returns nil if the command starts with a shell wrapper (bash/sudo/xargs etc.)
-    // or if the subcommand token doesn't look like a simple word.
+    // Mirrors CC's getSimpleCommandPrefix + getFirstWordPrefix:
+    // 1. Try two-word prefix: "git commit" → returns "git commit"
+    // 2. Fall back to one-word prefix: "python3" → returns "python3"
+    // 3. Returns nil if command starts with a shell wrapper or no valid prefix found.
+    // Callers append ":*" to form the rule content.
     private func bashCommandPrefix(_ command: String) -> String? {
         // Shells/wrappers that CC refuses to auto-allow by prefix
         let blocked: Set<String> = [
@@ -917,21 +927,30 @@ final class AgentStatusManager: ObservableObject {
         // Skip leading VAR=value tokens
         while let first = tokens.first, first.contains("=") {
             let varName = first.components(separatedBy: "=")[0]
-            // Only skip if it looks like a valid env var name
             let validEnvVar = varName.range(of: "^[A-Za-z_][A-Za-z0-9_]*$", options: .regularExpression) != nil
             guard validEnvVar else { break }
             tokens.removeFirst()
         }
 
-        guard tokens.count >= 2 else { return nil }
-        let cmd = tokens[0]
-        let sub = tokens[1]
-
+        guard let cmd = tokens.first, !cmd.isEmpty else { return nil }
         guard !blocked.contains(cmd) else { return nil }
-        // Subcommand must look like a simple kebab-case word (e.g. "run", "install", "build-dev")
-        guard sub.range(of: "^[a-z][a-z0-9]*(-[a-z0-9]+)*$", options: .regularExpression) != nil else { return nil }
 
-        return "\(cmd) \(sub)"
+        let wordRegex = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+
+        // Two-word prefix: "git commit", "npm install"
+        if tokens.count >= 2 {
+            let sub = tokens[1]
+            if sub.range(of: wordRegex, options: .regularExpression) != nil {
+                return "\(cmd) \(sub)"
+            }
+        }
+
+        // One-word prefix: "python3", "make"
+        if cmd.range(of: wordRegex, options: .regularExpression) != nil {
+            return cmd
+        }
+
+        return nil
     }
 
     /// Builds a short question string summarising the tool call for display.
