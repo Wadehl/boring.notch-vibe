@@ -406,11 +406,7 @@ final class AgentStatusManager: ObservableObject {
         try? fm.createDirectory(at: hooksDir, withIntermediateDirectories: true)
 
         let scriptURL = hooksDir.appendingPathComponent("on-event.sh")
-        let script = """
-            #!/bin/bash
-            mkdir -p ~/.claude/boringnotch
-            cat >> ~/.claude/boringnotch/events.jsonl
-            """
+        let script = "#!/bin/bash\nmkdir -p ~/.claude/boringnotch\ncat >> ~/.claude/boringnotch/events.jsonl\n"
         try? script.write(to: scriptURL, atomically: true, encoding: .utf8)
         try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
 
