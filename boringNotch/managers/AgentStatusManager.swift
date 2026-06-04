@@ -79,6 +79,7 @@ final class AgentStatusManager: ObservableObject {
 
     // Keys of interactions the user has dismissed; suppressed until a new one arrives
     private var dismissedInteractionKeys: Set<String> = []
+    private var hookSourcedPermissionSessions: Set<String> = []
 
     var pendingInteraction: PendingInteraction? { pendingInteractions.first }
 
@@ -1249,7 +1250,59 @@ final class AgentStatusManager: ObservableObject {
     }
 
     private func handlePermissionRequestHook(_ obj: [String: Any], sessionId: String) {
-        // implemented in Task 3
+        let cwd = obj["cwd"] as? String ?? ""
+        let toolName = obj["tool_name"] as? String ?? ""
+        let toolInput = obj["tool_input"] as? [String: Any] ?? [:]
+        let rawSuggestions = obj["suggestions"] as? [[String: Any]] ?? []
+
+        let options: [PendingInteractionOption]
+        if rawSuggestions.isEmpty {
+            options = permissionOptions(toolName: toolName, input: toolInput, cwd: cwd)
+        } else {
+            let yes = PendingInteractionOption(label: "Yes", description: "Allow once", keystrokeText: "y")
+            let no  = PendingInteractionOption(label: "No",  description: "Deny",       keystrokeText: "n")
+            let alwaysOpts = rawSuggestions.compactMap { s -> PendingInteractionOption? in
+                guard let ruleName = s["ruleName"] as? String else { return nil }
+                return PendingInteractionOption(
+                    label: "Yes, and don't ask again for \(ruleName)",
+                    description: "Always allow",
+                    keystrokeText: "a"
+                )
+            }
+            options = [yes] + alwaysOpts + [no]
+        }
+
+        let question = permissionQuestion(toolName: toolName, input: toolInput)
+        let cwdOpt = cwd.isEmpty ? nil : cwd
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let pid = self.sessions.first { $0.sessionId == sessionId }.flatMap { Int($0.id) } ?? 0
+            let summary = self.sessions.first { $0.sessionId == sessionId }?.summary
+
+            let interaction = PendingInteraction(
+                sessionId: sessionId,
+                pid: pid,
+                sessionSummary: summary,
+                type: .permission,
+                question: question,
+                header: toolName,
+                options: options,
+                multiSelect: false,
+                planTitle: nil,
+                toolUseId: nil,
+                assistantUuid: nil,
+                cwd: cwdOpt,
+                claudeVersion: nil
+            )
+
+            self.hookSourcedPermissionSessions.insert(sessionId)
+            self.pendingInteractions.removeAll { $0.sessionId == sessionId && $0.type == .permission }
+            let key = "\(sessionId)-\(PendingInteractionType.permission)"
+            if !self.dismissedInteractionKeys.contains(key) {
+                self.pendingInteractions.append(interaction)
+            }
+        }
     }
 
     private func handleSessionDoneHook(sessionId: String) {
@@ -1348,8 +1401,12 @@ final class AgentStatusManager: ObservableObject {
                 self.dismissedInteractionKeys = self.dismissedInteractionKeys.intersection(incomingKeys)
                 let visible = pendingInteractions.filter { i in
                     !self.dismissedInteractionKeys.contains("\(i.sessionId)-\(i.type)")
+                    && !self.hookSourcedPermissionSessions.contains(i.sessionId)
                 }
-                self.pendingInteractions = visible
+                let hookOwned = self.pendingInteractions.filter {
+                    self.hookSourcedPermissionSessions.contains($0.sessionId)
+                }
+                self.pendingInteractions = hookOwned + visible
             }
         }
     }
