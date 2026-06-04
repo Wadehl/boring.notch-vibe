@@ -138,7 +138,7 @@ struct AgentStatusView: View {
                     $0.status != .done || manager.recentlyDoneSessions.contains($0.id)
                 }) { session in
                     AgentSessionRow(session: session)
-                        .opacity(session.status == .done && manager.recentlyDoneSessions.contains(session.id) ? 0.6 : 1.0)
+                        .opacity(manager.recentlyDoneSessions.contains(session.id) ? 0.6 : 1.0)
                         .animation(.easeOut(duration: 0.8), value: manager.recentlyDoneSessions.contains(session.id))
                 }
             }
@@ -187,7 +187,7 @@ struct AgentSessionRow: View {
                             }
                     }
 
-                    if session.status == .done && manager.recentlyDoneSessions.contains(session.id) {
+                    if manager.recentlyDoneSessions.contains(session.id) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.green.opacity(0.85))

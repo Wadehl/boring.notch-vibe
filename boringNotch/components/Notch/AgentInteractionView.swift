@@ -79,8 +79,9 @@ struct AgentInteractionView: View {
 
     private var headerTitle: String {
         switch interaction.type {
-        case .permission: return "Claude Code 请求工具权限"
-        default: return "Claude Code 正在等待你"
+        case .permission:   return "Claude Code 请求工具权限"
+        case .completion:   return "响应已完成"
+        default:            return "Claude Code 正在等待你"
         }
     }
 
@@ -90,6 +91,8 @@ struct AgentInteractionView: View {
     private var contentSection: some View {
         if interaction.type == .planApproval {
             planContent
+        } else if interaction.type == .completion {
+            completionContent
         } else {
             questionContent
         }
@@ -198,6 +201,24 @@ struct AgentInteractionView: View {
         }
     }
 
+    private var completionContent: some View {
+        HStack(spacing: 14) {
+            CheckmarkAnimationView()
+            VStack(alignment: .leading, spacing: 3) {
+                if let summary = interaction.sessionSummary {
+                    Text(summary)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundColor(.white.opacity(0.85))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("5 秒后自动关闭")
+                    .font(.system(size: 10))
+                    .foregroundColor(.gray.opacity(0.5))
+            }
+        }
+    }
+
     private var planContent: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(interaction.planTitle ?? "Waiting for plan approval")
@@ -222,7 +243,11 @@ struct AgentInteractionView: View {
     // MARK: - Actions
 
     private func focusTerminal() {
-        manager.focusTerminal(claudePid: interaction.pid, sessionId: interaction.sessionId)
+        if interaction.type == .completion {
+            manager.dismissPendingInteraction(sessionId: interaction.sessionId)
+        } else {
+            manager.focusTerminal(claudePid: interaction.pid, sessionId: interaction.sessionId)
+        }
     }
 }
 
@@ -319,6 +344,55 @@ private struct FlowLayout: Layout {
             sub.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
             x += size.width + spacing
             lineH = max(lineH, size.height)
+        }
+    }
+}
+
+// MARK: - Apple Pay-style checkmark animation
+
+private struct CheckmarkShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to:    CGPoint(x: rect.width * 0.15, y: rect.height * 0.52))
+        p.addLine(to: CGPoint(x: rect.width * 0.42, y: rect.height * 0.78))
+        p.addLine(to: CGPoint(x: rect.width * 0.88, y: rect.height * 0.22))
+        return p
+    }
+}
+
+struct CheckmarkAnimationView: View {
+    @State private var circleProgress: CGFloat = 0
+    @State private var checkProgress: CGFloat  = 0
+    @State private var scale: CGFloat          = 0.5
+
+    private let green = Color(red: 52/255, green: 199/255, blue: 89/255)
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .trim(from: 0, to: circleProgress)
+                .stroke(green, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .frame(width: 32, height: 32)
+
+            CheckmarkShape()
+                .trim(from: 0, to: checkProgress)
+                .stroke(green, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                .frame(width: 16, height: 16)
+        }
+        .scaleEffect(scale)
+        .onAppear {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
+                scale = 1.0
+            }
+            withAnimation(.easeOut(duration: 0.45)) {
+                circleProgress = 1.0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    checkProgress = 1.0
+                }
+            }
         }
     }
 }

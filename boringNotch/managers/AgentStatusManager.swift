@@ -26,6 +26,7 @@ enum PendingInteractionType: Equatable {
     case question       // AskUserQuestion
     case planApproval   // ExitPlanMode
     case permission     // tool permission prompt (y/n/a)
+    case completion     // Stop hook — response finished
 }
 
 struct PendingInteractionOption: Equatable {
@@ -81,20 +82,29 @@ final class AgentStatusManager: ObservableObject {
     // Keys of interactions the user has dismissed; suppressed until a new one arrives
     private var dismissedInteractionKeys: Set<String> = []
     private var hookSourcedPermissionSessions: Set<String> = []
+    // Persistent sessionId (UUID) → id (PID) cache — survives after session is removed from sessions[]
+    private var sessionIdToPid: [String: String] = [:]
 
     var pendingInteraction: PendingInteraction? { pendingInteractions.first }
 
     func dismissPendingInteraction(sessionId: String? = nil) {
         if let sessionId {
             if let idx = pendingInteractions.firstIndex(where: { $0.sessionId == sessionId }) {
-                let key = "\(pendingInteractions[idx].sessionId)-\(pendingInteractions[idx].type)"
-                dismissedInteractionKeys.insert(key)
+                let interaction = pendingInteractions[idx]
+                if interaction.type != .completion {
+                    let key = "\(interaction.sessionId)-\(interaction.type)"
+                    dismissedInteractionKeys.insert(key)
+                }
                 pendingInteractions.remove(at: idx)
             }
+            hookSourcedPermissionSessions.remove(sessionId)
         } else {
             // Legacy: dismiss first
             if let first = pendingInteractions.first {
-                dismissedInteractionKeys.insert("\(first.sessionId)-\(first.type)")
+                if first.type != .completion {
+                    dismissedInteractionKeys.insert("\(first.sessionId)-\(first.type)")
+                }
+                hookSourcedPermissionSessions.remove(first.sessionId)
                 pendingInteractions.removeFirst()
             }
         }
@@ -144,7 +154,9 @@ final class AgentStatusManager: ObservableObject {
                 alert.runModal()
                 return
             }
-            terminalAppController.activateAndSend(digit: digit) {}
+            terminalAppController.activateAndSend(digit: digit) {
+                self.dismissPendingInteraction(sessionId: sessionId)
+            }
         } else if bundleId.hasPrefix("dev.warp.") {
             guard AXIsProcessTrusted() else {
                 XPCHelperClient.shared.requestAccessibilityAuthorization()
@@ -156,7 +168,9 @@ final class AgentStatusManager: ObservableObject {
                 alert.runModal()
                 return
             }
-            warpController.activateAndSend(claudePid: claudePid, digit: digit) {}
+            warpController.activateAndSend(claudePid: claudePid, digit: digit) {
+                self.dismissPendingInteraction(sessionId: sessionId)
+            }
         } else {
             focusTerminal(claudePid: claudePid, sessionId: sessionId, dismissOnSuccess: false)
         }
@@ -384,6 +398,7 @@ final class AgentStatusManager: ObservableObject {
     private var hookEventsSource: DispatchSourceFileSystemObject?
     private var hookEventsFD: Int32 = -1
     private var hookEventsOffset: UInt64 = 0
+    private var hookEventsTimer: DispatchSourceTimer?
 
     private let queue = DispatchQueue(label: "com.boringnotch.agentStatusManager", qos: .utility)
     private let hooksDir: URL
@@ -399,13 +414,20 @@ final class AgentStatusManager: ObservableObject {
         claudeSessionsDir = home.appendingPathComponent(".claude/sessions")
         codexLogsDB = home.appendingPathComponent(".codex/logs_2.sqlite")
         codexSessionIndex = home.appendingPathComponent(".codex/session_index.jsonl")
+        // Hook script lives outside container (executable), events file lives inside container (readable by app)
+        let containerHome = FileManager.default.homeDirectoryForCurrentUser
         hooksDir = home.appendingPathComponent(".claude/boringnotch/hooks")
-        eventsFile = home.appendingPathComponent(".claude/boringnotch/events.jsonl")
+        eventsFile = containerHome.appendingPathComponent("events.jsonl")
         installHooks()
+        print("[HookMonitor] eventsFile=\(eventsFile.path)")
         startClaudeWatcher()
         startClaudePoller()
         startCodexPoller()
         startHookEventMonitor()
+    }
+
+    func reinstallHooks() {
+        installHooks()
     }
 
     private func installHooks() {
@@ -413,7 +435,8 @@ final class AgentStatusManager: ObservableObject {
         try? fm.createDirectory(at: hooksDir, withIntermediateDirectories: true)
 
         let scriptURL = hooksDir.appendingPathComponent("on-event.sh")
-        let script = "#!/bin/bash\nmkdir -p ~/.claude/boringnotch\ncat >> ~/.claude/boringnotch/events.jsonl\n"
+        // Use absolute path so shell ~ resolves correctly regardless of invocation context
+        let script = "#!/bin/bash\ncat >> \"\(eventsFile.path)\"\n"
         try? script.write(to: scriptURL, atomically: true, encoding: .utf8)
         try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
 
@@ -528,6 +551,9 @@ final class AgentStatusManager: ObservableObject {
             let startedAt = Date(timeIntervalSince1970: startedAtMs / 1000)
             let updatedAtMs = json["updatedAt"] as? Double ?? 0
             let updatedAt = Date(timeIntervalSince1970: updatedAtMs / 1000)
+            if rawStatus != "idle" || waitingFor != nil {
+                print("[Polling] pid=\(pid) rawStatus=\(rawStatus) waitingFor=\(waitingFor ?? "nil")")
+            }
 
             let status: AgentStatus
             if !isProcessAlive(pid: pid) {
@@ -576,12 +602,19 @@ final class AgentStatusManager: ObservableObject {
                 interaction = detectPendingInteraction(cwd: cwd, sessionId: sid, pid: pid, sessionSummary: session.summary)
             }
 
-            // Fallback: permission prompt
-            if interaction == nil && sessionWaitingFor[pid] == "permission prompt" {
+            // Permission detection:
+            // - Bash: CC sets rawStatus=busy + waitingFor="permission prompt"
+            // - File tools (Edit/Write/Read/NotebookEdit): CC sets rawStatus=idle, waitingFor=nil
+            //   → detected by scanning JSONL for unanswered tool_use on idle sessions
+            let isPermissionWait = sessionWaitingFor[pid] == "permission prompt"
+            let isIdleWithPossiblePermission = session.status == .idle
+            if interaction == nil && (isPermissionWait || isIdleWithPossiblePermission) {
                 if let sid = session.sessionId, let cwd = session.cwd {
                     interaction = detectPermissionInteraction(cwd: cwd, sessionId: sid, pid: pid, sessionSummary: session.summary)
                 }
-                if interaction == nil {
+                // Yes/No fallback only when CC explicitly signals a permission prompt
+                // but the JSONL scan couldn't find the tool_use
+                if interaction == nil && isPermissionWait {
                     interaction = PendingInteraction(
                         sessionId: session.sessionId ?? session.id,
                         pid: pid,
@@ -1196,34 +1229,52 @@ final class AgentStatusManager: ObservableObject {
             FileManager.default.createFile(atPath: path, contents: nil)
         }
 
-        let fd = Darwin.open(path, O_EVTONLY)
-        guard fd >= 0 else { return }
-        hookEventsFD = fd
-
         // Start at end of file — ignore events written before this session
         hookEventsOffset = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? UInt64) ?? 0
+        print("[HookMonitor] starting, offset=\(hookEventsOffset), path=\(path)")
 
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd,
-            eventMask: [.write, .extend],
-            queue: queue
-        )
-        source.setEventHandler { [weak self] in
+        let fd = Darwin.open(path, O_EVTONLY)
+        if fd >= 0 {
+            hookEventsFD = fd
+            let source = DispatchSource.makeFileSystemObjectSource(
+                fileDescriptor: fd,
+                eventMask: [.write, .extend],
+                queue: queue
+            )
+            source.setEventHandler { [weak self] in
+                self?.drainHookEvents()
+            }
+            source.resume()
+            hookEventsSource = source
+            print("[HookMonitor] DispatchSource armed (fd=\(fd))")
+        } else {
+            print("[HookMonitor] DispatchSource failed (fd=-1), polling only")
+        }
+
+        // Polling fallback: drain every 2s in case DispatchSource is blocked (sandbox)
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 2, repeating: 2)
+        timer.setEventHandler { [weak self] in
             self?.drainHookEvents()
         }
-        source.resume()
-        hookEventsSource = source
+        timer.resume()
+        hookEventsTimer = timer
     }
 
     private func drainHookEvents() {
-        guard let handle = try? FileHandle(forReadingFrom: eventsFile) else { return }
-        defer { handle.closeFile() }
-        handle.seek(toFileOffset: hookEventsOffset)
-        let newData = handle.readDataToEndOfFile()
-        hookEventsOffset += UInt64(newData.count)
-        guard !newData.isEmpty,
-              let text = String(data: newData, encoding: .utf8)
-        else { return }
+        guard let allData = try? Data(contentsOf: eventsFile) else {
+            print("[HookMonitor] drainHookEvents: Data(contentsOf:) failed")
+            return
+        }
+        let currentSize = UInt64(allData.count)
+        guard currentSize > hookEventsOffset else {
+            print("[HookMonitor] drain: no new bytes (size=\(currentSize) offset=\(hookEventsOffset))")
+            return
+        }
+        let newData = allData[Int(hookEventsOffset)...]
+        hookEventsOffset = currentSize
+        guard let text = String(data: newData, encoding: .utf8) else { return }
+        print("[HookMonitor] drained \(newData.count) bytes")
 
         for line in text.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1240,13 +1291,15 @@ final class AgentStatusManager: ObservableObject {
               let sessionId = obj["session_id"] as? String
         else { return }
 
-        switch eventName {
-        case "PermissionRequest":
+        switch eventName.lowercased() {
+        case "permissionrequest":
             handlePermissionRequestHook(obj, sessionId: sessionId)
-        case "Stop", "SessionEnd":
-            handleSessionDoneHook(sessionId: sessionId)
+        case "stop":
+            handleResponseCompleteHook(sessionId: sessionId)
+        case "sessionend":
+            print("[HookMonitor] SessionEnd sid=\(sessionId.prefix(8)) (ignored)")
         default:
-            break
+            print("[HookMonitor] unhandled event: \(eventName)")
         }
     }
 
@@ -1254,7 +1307,12 @@ final class AgentStatusManager: ObservableObject {
         let cwd = obj["cwd"] as? String ?? ""
         let toolName = obj["tool_name"] as? String ?? ""
         let toolInput = obj["tool_input"] as? [String: Any] ?? [:]
-        let rawSuggestions = obj["suggestions"] as? [[String: Any]] ?? []
+        let rawSuggestions = obj["permission_suggestions"] as? [[String: Any]] ?? []
+        print("[HookMonitor] PermissionRequest tool=\(toolName) suggestions=\(rawSuggestions.map { $0["type"] as? String ?? "?" })")
+
+        // AskUserQuestion and ExitPlanMode are interactive tools, not permission gates.
+        // The JSONL scanner (detectPendingInteraction) handles them as .question/.planApproval.
+        guard toolName != "AskUserQuestion" && toolName != "ExitPlanMode" else { return }
 
         let options: [PendingInteractionOption]
         if rawSuggestions.isEmpty {
@@ -1262,15 +1320,14 @@ final class AgentStatusManager: ObservableObject {
         } else {
             let yes = PendingInteractionOption(label: "Yes", description: "Allow once", keystrokeText: "y")
             let no  = PendingInteractionOption(label: "No",  description: "Deny",       keystrokeText: "n")
-            let alwaysOpts = rawSuggestions.compactMap { s -> PendingInteractionOption? in
-                guard let ruleName = s["ruleName"] as? String else { return nil }
-                return PendingInteractionOption(
-                    label: "Yes, and don't ask again for \(ruleName)",
-                    description: "Always allow",
-                    keystrokeText: "a"
-                )
+            let alwaysOpts = rawSuggestions.compactMap { buildPermissionOption(from: $0) }
+            // If all suggestions were unrecognized types (e.g. setMode for Edit/Write),
+            // fall back to permissionOptions() which derives the correct labels from tool+input.
+            if alwaysOpts.isEmpty {
+                options = permissionOptions(toolName: toolName, input: toolInput, cwd: cwd)
+            } else {
+                options = [yes] + alwaysOpts + [no]
             }
-            options = [yes] + alwaysOpts + [no]
         }
 
         let question = permissionQuestion(toolName: toolName, input: toolInput)
@@ -1306,12 +1363,82 @@ final class AgentStatusManager: ObservableObject {
         }
     }
 
-    private func handleSessionDoneHook(sessionId: String) {
+    private func buildPermissionOption(from suggestion: [String: Any]) -> PendingInteractionOption? {
+        guard let type = suggestion["type"] as? String else { return nil }
+
+        switch type {
+        case "addRules":
+            guard let rules = suggestion["rules"] as? [[String: Any]],
+                  let first = rules.first,
+                  let ruleContent = first["ruleContent"] as? String,
+                  let toolName = first["toolName"] as? String else { return nil }
+            if toolName == "Bash" {
+                return PendingInteractionOption(
+                    label: "Yes, and don't ask again for: \(ruleContent)",
+                    description: "Always allow",
+                    keystrokeText: "a"
+                )
+            } else {
+                // File tools (Read/Edit/Write): CC always labels these "from this project"
+                // regardless of destination (session vs localSettings) — matches shellPermissionHelpers.tsx
+                let cleanPath = ruleContent
+                    .replacingOccurrences(of: "^//+", with: "/", options: .regularExpression)
+                    .replacingOccurrences(of: "/\\*\\*?$", with: "", options: .regularExpression)
+                let dirname = URL(fileURLWithPath: cleanPath).lastPathComponent
+                return PendingInteractionOption(
+                    label: "Yes, allow reading from \(dirname)/ from this project",
+                    description: "Allow directory",
+                    keystrokeText: "a"
+                )
+            }
+        case "addDirectories":
+            guard let dirs = suggestion["directories"] as? [String],
+                  let first = dirs.first else { return nil }
+            let basename = URL(fileURLWithPath: first).lastPathComponent
+            return PendingInteractionOption(
+                label: "Yes, allow reading from \(basename)/ from this project",
+                description: "Allow directory",
+                keystrokeText: "a"
+            )
+        default:
+            return nil
+        }
+    }
+
+    private func handleResponseCompleteHook(sessionId: String) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.recentlyDoneSessions.insert(sessionId)
+            let pid = self.sessionIdToPid[sessionId]
+                ?? self.sessions.first { $0.sessionId == sessionId }?.id
+                ?? sessionId
+            let summary = self.sessions.first { $0.sessionId == sessionId }?.summary
+            print("[HookMonitor] Stop sid=\(sessionId.prefix(8)) pid=\(pid)")
+
+            // Badge in AgentStatusView for 5s
+            self.recentlyDoneSessions.insert(pid)
+
+            // Show completion notification card (opens notch)
+            let notification = PendingInteraction(
+                sessionId: sessionId,
+                pid: Int(pid) ?? 0,
+                sessionSummary: summary,
+                type: .completion,
+                question: nil,
+                header: nil,
+                options: [],
+                multiSelect: false,
+                planTitle: nil,
+                toolUseId: nil,
+                assistantUuid: nil,
+                cwd: nil,
+                claudeVersion: nil
+            )
+            self.pendingInteractions.removeAll { $0.sessionId == sessionId && $0.type == .completion }
+            self.pendingInteractions.append(notification)
+
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-                self?.recentlyDoneSessions.remove(sessionId)
+                self?.recentlyDoneSessions.remove(pid)
+                self?.pendingInteractions.removeAll { $0.sessionId == sessionId && $0.type == .completion }
             }
         }
     }
@@ -1400,12 +1527,26 @@ final class AgentStatusManager: ObservableObject {
             guard let self else { return }
             var kept = self.sessions.filter { $0.app != app }
             let visible = newSessions.filter { $0.status != .done || $0.app == .claudeCode }
+            // Update sessionId→pid cache so hook can find PID even after session is removed
+            for s in visible {
+                if let sid = s.sessionId { self.sessionIdToPid[sid] = s.id }
+            }
             kept.append(contentsOf: visible)
             self.sessions = kept
             if app == .claudeCode {
                 // Filter out dismissed interactions; clear dismissed keys for interactions no longer present
                 let incomingKeys = Set(pendingInteractions.map { "\($0.sessionId)-\($0.type)" })
                 self.dismissedInteractionKeys = self.dismissedInteractionKeys.intersection(incomingKeys)
+
+                // Auto-resolve hook-owned permissions: if the JSONL scan no longer detects a pending
+                // permission for a session, the user must have responded manually in the terminal.
+                let detectedPermSessions = Set(pendingInteractions.filter { $0.type == .permission }.map { $0.sessionId })
+                let toAutoResolve = self.hookSourcedPermissionSessions.filter { !detectedPermSessions.contains($0) }
+                for sid in toAutoResolve {
+                    self.hookSourcedPermissionSessions.remove(sid)
+                    self.pendingInteractions.removeAll { $0.sessionId == sid && $0.type == .permission }
+                }
+
                 let visible = pendingInteractions.filter { i in
                     !self.dismissedInteractionKeys.contains("\(i.sessionId)-\(i.type)")
                     && !self.hookSourcedPermissionSessions.contains(i.sessionId)
@@ -1413,7 +1554,8 @@ final class AgentStatusManager: ObservableObject {
                 let hookOwned = self.pendingInteractions.filter {
                     self.hookSourcedPermissionSessions.contains($0.sessionId)
                 }
-                self.pendingInteractions = hookOwned + visible
+                let completionOwned = self.pendingInteractions.filter { $0.type == .completion }
+                self.pendingInteractions = hookOwned + completionOwned + visible
             }
         }
     }
