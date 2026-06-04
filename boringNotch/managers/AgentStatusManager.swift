@@ -380,6 +380,8 @@ final class AgentStatusManager: ObservableObject {
     private var codexTimer: DispatchSourceTimer?
 
     private let queue = DispatchQueue(label: "com.boringnotch.agentStatusManager", qos: .utility)
+    private let hooksDir: URL
+    private let eventsFile: URL
 
     // Codex: thread is "running" if it logged within this interval
     private let codexActiveThresholdSeconds: TimeInterval = 5
@@ -391,9 +393,59 @@ final class AgentStatusManager: ObservableObject {
         claudeSessionsDir = home.appendingPathComponent(".claude/sessions")
         codexLogsDB = home.appendingPathComponent(".codex/logs_2.sqlite")
         codexSessionIndex = home.appendingPathComponent(".codex/session_index.jsonl")
+        hooksDir = home.appendingPathComponent(".claude/boringnotch/hooks")
+        eventsFile = home.appendingPathComponent(".claude/boringnotch/events.jsonl")
+        installHooks()
         startClaudeWatcher()
         startClaudePoller()
         startCodexPoller()
+    }
+
+    private func installHooks() {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: hooksDir, withIntermediateDirectories: true)
+
+        let scriptURL = hooksDir.appendingPathComponent("on-event.sh")
+        let script = """
+            #!/bin/bash
+            mkdir -p ~/.claude/boringnotch
+            cat >> ~/.claude/boringnotch/events.jsonl
+            """
+        try? script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+
+        injectHookSettings(scriptPath: scriptURL.path)
+    }
+
+    private func injectHookSettings(scriptPath: String) {
+        let settingsURL = Self.realHomeURL.appendingPathComponent(".claude/settings.json")
+
+        var root: [String: Any]
+        if let data = try? Data(contentsOf: settingsURL),
+           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            root = parsed
+        } else {
+            root = [:]
+        }
+
+        var hooks = root["hooks"] as? [String: Any] ?? [:]
+        let hookEntry: [String: Any] = ["hooks": [["type": "command", "command": scriptPath]]]
+        for event in ["PermissionRequest", "Stop", "SessionEnd"] {
+            var list = hooks[event] as? [[String: Any]] ?? []
+            let alreadyInstalled = list.contains { entry in
+                guard let inner = entry["hooks"] as? [[String: Any]] else { return false }
+                return inner.contains { $0["command"] as? String == scriptPath }
+            }
+            if !alreadyInstalled { list.append(hookEntry) }
+            hooks[event] = list
+        }
+        root["hooks"] = hooks
+
+        guard let data = try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys]),
+              var str = String(data: data, encoding: .utf8)
+        else { return }
+        str += "\n"
+        try? str.write(to: settingsURL, atomically: true, encoding: .utf8)
     }
 
     deinit {
