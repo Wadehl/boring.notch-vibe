@@ -379,6 +379,10 @@ final class AgentStatusManager: ObservableObject {
     // Timer for Codex SQLite polling (WAL makes FSEvents unreliable)
     private var codexTimer: DispatchSourceTimer?
 
+    private var hookEventsSource: DispatchSourceFileSystemObject?
+    private var hookEventsFD: Int32 = -1
+    private var hookEventsOffset: UInt64 = 0
+
     private let queue = DispatchQueue(label: "com.boringnotch.agentStatusManager", qos: .utility)
     private let hooksDir: URL
     private let eventsFile: URL
@@ -399,6 +403,7 @@ final class AgentStatusManager: ObservableObject {
         startClaudeWatcher()
         startClaudePoller()
         startCodexPoller()
+        startHookEventMonitor()
     }
 
     private func installHooks() {
@@ -449,6 +454,8 @@ final class AgentStatusManager: ObservableObject {
         if claudeDirFD >= 0 { Darwin.close(claudeDirFD) }
         claudePollingTimer?.cancel()
         codexTimer?.cancel()
+        hookEventsSource?.cancel()
+        if hookEventsFD >= 0 { Darwin.close(hookEventsFD) }
     }
 
     // MARK: - Claude Code
@@ -1177,6 +1184,76 @@ final class AgentStatusManager: ObservableObject {
         }
         timer.resume()
         codexTimer = timer
+    }
+
+    private func startHookEventMonitor() {
+        let path = eventsFile.path
+
+        // Ensure file exists so we can open it
+        if !FileManager.default.fileExists(atPath: path) {
+            FileManager.default.createFile(atPath: path, contents: nil)
+        }
+
+        let fd = Darwin.open(path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        hookEventsFD = fd
+
+        // Start at end of file — ignore events written before this session
+        hookEventsOffset = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? UInt64) ?? 0
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend],
+            queue: queue
+        )
+        source.setEventHandler { [weak self] in
+            self?.drainHookEvents()
+        }
+        source.resume()
+        hookEventsSource = source
+    }
+
+    private func drainHookEvents() {
+        guard let handle = try? FileHandle(forReadingFrom: eventsFile) else { return }
+        defer { handle.closeFile() }
+        handle.seek(toFileOffset: hookEventsOffset)
+        let newData = handle.readDataToEndOfFile()
+        hookEventsOffset += UInt64(newData.count)
+        guard !newData.isEmpty,
+              let text = String(data: newData, encoding: .utf8)
+        else { return }
+
+        for line in text.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty,
+                  let data = trimmed.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { continue }
+            handleHookEvent(obj)
+        }
+    }
+
+    private func handleHookEvent(_ obj: [String: Any]) {
+        guard let eventName = obj["hook_event_name"] as? String,
+              let sessionId = obj["session_id"] as? String
+        else { return }
+
+        switch eventName {
+        case "PermissionRequest":
+            handlePermissionRequestHook(obj, sessionId: sessionId)
+        case "Stop", "SessionEnd":
+            handleSessionDoneHook(sessionId: sessionId)
+        default:
+            break
+        }
+    }
+
+    private func handlePermissionRequestHook(_ obj: [String: Any], sessionId: String) {
+        // implemented in Task 3
+    }
+
+    private func handleSessionDoneHook(sessionId: String) {
+        // implemented in Task 4
     }
 
     private func refreshCodexSessions() {
