@@ -1311,9 +1311,7 @@ final class AgentStatusManager: ObservableObject {
             guard let self else { return }
             self.recentlyDoneSessions.insert(sessionId)
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-                withAnimation(.easeOut(duration: 0.8)) {
-                    self?.recentlyDoneSessions.remove(sessionId)
-                }
+                self?.recentlyDoneSessions.remove(sessionId)
             }
         }
     }
