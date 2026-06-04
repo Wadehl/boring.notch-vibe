@@ -187,7 +187,7 @@ struct AgentSessionRow: View {
                             }
                     }
 
-                    if session.status == .done {
+                    if session.status == .done && manager.recentlyDoneSessions.contains(session.id) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.green.opacity(0.85))
