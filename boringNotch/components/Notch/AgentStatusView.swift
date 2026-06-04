@@ -134,8 +134,12 @@ struct AgentStatusView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(manager.sessions.filter { $0.status != .done }) { session in
+                ForEach(manager.sessions.filter {
+                    $0.status != .done || manager.recentlyDoneSessions.contains($0.id)
+                }) { session in
                     AgentSessionRow(session: session)
+                        .opacity(session.status == .done && manager.recentlyDoneSessions.contains(session.id) ? 0.6 : 1.0)
+                        .animation(.easeOut(duration: 0.8), value: manager.recentlyDoneSessions.contains(session.id))
                 }
             }
             .padding(.horizontal, 12)
@@ -181,6 +185,14 @@ struct AgentSessionRow: View {
                                     spinnerRotation = 360
                                 }
                             }
+                    }
+
+                    if session.status == .done {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.green.opacity(0.85))
+                            .frame(width: 14, height: 14)
+                            .offset(x: 8, y: 8)
                     }
                 }
 
@@ -277,7 +289,7 @@ struct AgentSessionRow: View {
         switch session.status {
         case .running: return .green
         case .idle:    return .orange
-        case .done:    return .gray
+        case .done:    return .green.opacity(0.7)
         }
     }
 

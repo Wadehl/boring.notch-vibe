@@ -76,6 +76,7 @@ final class AgentStatusManager: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = []
     @Published private(set) var pendingInteractions: [PendingInteraction] = []
     @Published private(set) var permissionMismatchWarning: String? = nil
+    @Published private(set) var recentlyDoneSessions: Set<String> = []
 
     // Keys of interactions the user has dismissed; suppressed until a new one arrives
     private var dismissedInteractionKeys: Set<String> = []
@@ -1306,7 +1307,15 @@ final class AgentStatusManager: ObservableObject {
     }
 
     private func handleSessionDoneHook(sessionId: String) {
-        // implemented in Task 4
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.recentlyDoneSessions.insert(sessionId)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                withAnimation(.easeOut(duration: 0.8)) {
+                    self?.recentlyDoneSessions.remove(sessionId)
+                }
+            }
+        }
     }
 
     private func refreshCodexSessions() {
