@@ -98,13 +98,12 @@ final class XPCHelperClient: NSObject {
     // MARK: - Accessibility
     
     nonisolated func requestAccessibilityAuthorization() {
-        Task {
-            let service = await MainActor.run {
-                ensureRemoteService()
-            }
-            try? await service.withService { service in
-                service.requestAccessibilityAuthorization()
-            }
+        // Run directly in the main process so that boringNotch (not the XPC helper)
+        // is added to the Accessibility list. The XPC helper doesn't need accessibility —
+        // all keystroke delivery uses CGEvent.post(tap: .cgSessionEventTap) in the main process.
+        Task { @MainActor in
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            AXIsProcessTrustedWithOptions(options)
         }
     }
     
