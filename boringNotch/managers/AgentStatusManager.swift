@@ -39,6 +39,7 @@ struct PendingInteraction: Equatable {
     let sessionId: String
     let pid: Int               // claude process pid, for terminal focus
     let sessionSummary: String?
+    let agentReply: String?    // last assistant text, shown in completion card body
     let type: PendingInteractionType
     // For AskUserQuestion
     let question: String?
@@ -622,9 +623,8 @@ final class AgentStatusManager: ObservableObject {
                         sessionId: session.sessionId ?? session.id,
                         pid: pid,
                         sessionSummary: session.summary,
+                        agentReply: nil,
                         type: .permission,
-                        question: nil,
-                        header: nil,
                         options: [
                             PendingInteractionOption(label: "Yes", description: "Allow once", keystrokeText: "y"),
                             PendingInteractionOption(label: "No", description: "Deny", keystrokeText: "n"),
@@ -832,6 +832,7 @@ final class AgentStatusManager: ObservableObject {
                 sessionId: sessionId,
                 pid: pid,
                 sessionSummary: sessionSummary,
+                agentReply: nil,
                 type: .question,
                 question: questionText,
                 header: header,
@@ -852,6 +853,7 @@ final class AgentStatusManager: ObservableObject {
                 sessionId: sessionId,
                 pid: pid,
                 sessionSummary: sessionSummary,
+                agentReply: nil,
                 type: .planApproval,
                 question: nil,
                 header: nil,
@@ -928,6 +930,7 @@ final class AgentStatusManager: ObservableObject {
             sessionId: sessionId,
             pid: pid,
             sessionSummary: sessionSummary,
+            agentReply: nil,
             type: .permission,
             question: question,
             header: tool.name,
@@ -1376,6 +1379,7 @@ final class AgentStatusManager: ObservableObject {
                 sessionId: sessionId,
                 pid: pid,
                 sessionSummary: summary,
+                agentReply: nil,
                 type: .permission,
                 question: question,
                 header: toolName,
@@ -1446,9 +1450,10 @@ final class AgentStatusManager: ObservableObject {
                 ?? self.sessions.first { $0.sessionId == sessionId }?.id
                 ?? sessionId
             let resolvedCwd = cwd ?? self.sessions.first { $0.sessionId == sessionId }?.cwd
-            let lastReply = resolvedCwd.flatMap { self.readLastAssistantMessage(cwd: $0, sessionId: sessionId) }
-            let summary = lastReply ?? self.sessions.first { $0.sessionId == sessionId }?.summary
-            print("[HookMonitor] Stop sid=\(sessionId.prefix(8)) pid=\(pid) summary=\(summary ?? "nil")")
+            let agentReply = resolvedCwd.flatMap { self.readLastAssistantMessage(cwd: $0, sessionId: sessionId) }
+            let userMessage = resolvedCwd.flatMap { self.readClaudeSummary(cwd: $0, sessionId: sessionId) }
+                ?? self.sessions.first { $0.sessionId == sessionId }?.summary
+            print("[HookMonitor] Stop sid=\(sessionId.prefix(8)) pid=\(pid) userMsg=\(userMessage ?? "nil") reply=\(agentReply ?? "nil")")
 
             // Badge in AgentStatusView for 5s
             self.recentlyDoneSessions.insert(pid)
@@ -1457,7 +1462,8 @@ final class AgentStatusManager: ObservableObject {
             let notification = PendingInteraction(
                 sessionId: sessionId,
                 pid: Int(pid) ?? 0,
-                sessionSummary: summary,
+                sessionSummary: userMessage,
+                agentReply: agentReply,
                 type: .completion,
                 question: nil,
                 header: nil,

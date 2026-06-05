@@ -64,7 +64,7 @@ struct AgentInteractionView: View {
                 Text(headerTitle)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.white.opacity(0.9))
-                if let summary = interaction.sessionSummary {
+                if interaction.type != .completion, let summary = interaction.sessionSummary {
                     Text(summary)
                         .font(.system(size: 10))
                         .foregroundColor(.gray)
@@ -80,7 +80,7 @@ struct AgentInteractionView: View {
     private var headerTitle: String {
         switch interaction.type {
         case .permission:   return "Claude Code 请求工具权限"
-        case .completion:   return "响应已完成"
+        case .completion:   return interaction.sessionSummary ?? "响应已完成"
         default:            return "Claude Code 正在等待你"
         }
     }
@@ -205,8 +205,8 @@ struct AgentInteractionView: View {
         HStack(spacing: 14) {
             CheckmarkAnimationView()
             VStack(alignment: .leading, spacing: 3) {
-                if let summary = interaction.sessionSummary {
-                    Text(summary)
+                if let reply = interaction.agentReply {
+                    Text(reply)
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundColor(.white.opacity(0.85))
                         .lineLimit(2)
