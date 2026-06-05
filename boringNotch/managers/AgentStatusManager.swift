@@ -625,6 +625,8 @@ final class AgentStatusManager: ObservableObject {
                         sessionSummary: session.summary,
                         agentReply: nil,
                         type: .permission,
+                        question: nil,
+                        header: nil,
                         options: [
                             PendingInteractionOption(label: "Yes", description: "Allow once", keystrokeText: "y"),
                             PendingInteractionOption(label: "No", description: "Deny", keystrokeText: "n"),
