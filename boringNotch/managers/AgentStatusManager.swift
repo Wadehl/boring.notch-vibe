@@ -436,7 +436,7 @@ final class AgentStatusManager: ObservableObject {
 
         let scriptURL = hooksDir.appendingPathComponent("on-event.sh")
         // Use absolute path so shell ~ resolves correctly regardless of invocation context
-        let script = "#!/bin/bash\ncat >> \"\(eventsFile.path)\"\n"
+        let script = "#!/bin/sh\ncat >> \"\(eventsFile.path)\"\n"
         try? script.write(to: scriptURL, atomically: true, encoding: .utf8)
         try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
 
