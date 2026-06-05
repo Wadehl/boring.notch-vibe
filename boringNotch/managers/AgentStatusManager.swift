@@ -721,6 +721,8 @@ final class AgentStatusManager: ObservableObject {
     }
 
     /// Reads the last assistant text reply from the session JSONL for use in the completion card.
+    /// Prefers pure-text messages (no tool_use blocks) — these are final summaries.
+    /// Falls back to any assistant message with text (e.g. preamble before a tool call).
     private func readLastAssistantMessage(cwd: String, sessionId: String) -> String? {
         let encodedCwd = encodeCwd(cwd)
         let jsonlFile = Self.realHomeURL
@@ -730,7 +732,12 @@ final class AgentStatusManager: ObservableObject {
 
         guard let content = try? String(contentsOf: jsonlFile, encoding: .utf8) else { return nil }
 
-        for line in content.components(separatedBy: "\n").reversed() {
+        let lines = content.components(separatedBy: "\n").reversed()
+
+        struct Candidate { let text: String; let hasToolUse: Bool }
+        var candidates: [Candidate] = []
+
+        for line in lines {
             guard !line.isEmpty,
                   let data = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -745,9 +752,18 @@ final class AgentStatusManager: ObservableObject {
             }.joined(separator: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
-            if !text.isEmpty { return String(text.prefix(80)) }
+            guard !text.isEmpty else { continue }
+
+            let hasToolUse = contentArr.contains { $0["type"] as? String == "tool_use" }
+            candidates.append(Candidate(text: text, hasToolUse: hasToolUse))
+
+            // Collect a few candidates then stop scanning
+            if candidates.count >= 5 { break }
         }
-        return nil
+
+        // Prefer the most-recent pure-text message; fall back to the most-recent with any text
+        let winner = candidates.first { !$0.hasToolUse } ?? candidates.first
+        return winner.map { String($0.text.prefix(80)) }
     }
 
     /// Scans the session JSONL tail to detect if Claude Code is waiting for user input.
