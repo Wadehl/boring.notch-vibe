@@ -212,9 +212,6 @@ struct AgentInteractionView: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("5 秒后自动关闭")
-                    .font(.system(size: 10))
-                    .foregroundColor(.gray.opacity(0.5))
             }
         }
     }
