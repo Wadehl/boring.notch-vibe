@@ -431,16 +431,19 @@ final class AgentStatusManager: ObservableObject {
     }
 
     private func installHooks() {
-        let fm = FileManager.default
-        try? fm.createDirectory(at: hooksDir, withIntermediateDirectories: true)
-
         let scriptURL = hooksDir.appendingPathComponent("on-event.sh")
-        // Use absolute path so shell ~ resolves correctly regardless of invocation context
         let script = "#!/bin/sh\ncat >> \"\(eventsFile.path)\"\n"
-        try? script.write(to: scriptURL, atomically: true, encoding: .utf8)
-        try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
 
-        injectHookSettings(scriptPath: scriptURL.path)
+        // Write the script via the unsandboxed XPC helper so the file doesn't get
+        // com.apple.quarantine — sandboxed-written scripts are blocked by the kernel.
+        Task {
+            let result = await XPCHelperClient.shared.writeFile(
+                atPath: scriptURL.path, content: script, posixPermissions: 0o755)
+            if !result.success {
+                print("[AgentStatusManager] installHooks: writeFile failed: \(result.error ?? "unknown")")
+            }
+            injectHookSettings(scriptPath: scriptURL.path)
+        }
     }
 
     private func injectHookSettings(scriptPath: String) {

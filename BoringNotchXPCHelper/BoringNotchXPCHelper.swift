@@ -389,6 +389,18 @@ class BoringNotchXPCHelper: NSObject, BoringNotchXPCHelperProtocol {
         return Int32(sqlite3_column_int(stmt, 0)) + 1  // 0-based → 1-based
     }
 
+    @objc func writeFile(atPath path: String, content: String, posixPermissions: Int32, with reply: @escaping (Bool, String?) -> Void) {
+        let url = URL(fileURLWithPath: path)
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try content.write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: Int(posixPermissions)], ofItemAtPath: path)
+            reply(true, nil)
+        } catch {
+            reply(false, error.localizedDescription)
+        }
+    }
+
     // MARK: - Helper handle for private framework
     private enum DisplayServicesHandle {
         static let handle: UnsafeMutableRawPointer? = {

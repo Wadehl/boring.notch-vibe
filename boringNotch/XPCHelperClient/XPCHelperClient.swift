@@ -211,6 +211,19 @@ final class XPCHelperClient: NSObject {
         }
     }
 
+    nonisolated func writeFile(atPath path: String, content: String, posixPermissions: Int32) async -> (success: Bool, error: String?) {
+        do {
+            let service = await MainActor.run { ensureRemoteService() }
+            return try await service.withContinuation { service, continuation in
+                service.writeFile(atPath: path, content: content, posixPermissions: posixPermissions) { success, errorMsg in
+                    continuation.resume(returning: (success, errorMsg))
+                }
+            }
+        } catch {
+            return (false, error.localizedDescription)
+        }
+    }
+
     // MARK: - Keyboard Brightness
     
     nonisolated func isKeyboardBrightnessAvailable() async -> Bool {
