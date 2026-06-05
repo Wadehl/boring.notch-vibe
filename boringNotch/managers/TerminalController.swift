@@ -51,16 +51,17 @@ class TerminalController {
         }
     }
 
-    /// Send a single-digit keystroke (1-9) to the terminal after it is frontmost.
-    /// Requires `AXIsProcessTrusted()` == true on the caller.
+    /// Send a single-digit keystroke (1-9) to the frontmost app via the unsandboxed XPC helper.
+    /// The XPC helper uses CGEvent.post(tap: .cghidEventTap) so the main app does not need
+    /// Accessibility permission for this path.
     func sendDigit(_ digit: Int) {
         guard digit >= 1, digit <= 9 else { return }
-        let keyCodes: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
+        let keyCodes: [Int32] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
         let keyCode = keyCodes[digit - 1]
-        let src = CGEventSource(stateID: .hidSystemState)
-        CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: true)?.post(tap: .cgSessionEventTap)
-        CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: false)?.post(tap: .cgSessionEventTap)
-        print("[\(type(of: self))] sendDigit: sent \(digit)")
+        Task {
+            await XPCHelperClient.shared.sendKeystrokes(keyCodes: [keyCode], keystrokeText: nil, targetPid: 0)
+        }
+        print("[\(type(of: self))] sendDigit: dispatched \(digit) via XPC helper")
     }
 
     func runningApp() -> NSRunningApplication? {

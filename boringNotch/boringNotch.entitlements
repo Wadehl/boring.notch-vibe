@@ -43,6 +43,8 @@
 	<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
 	<array>
 		<string>/.claude/projects/</string>
+		<string>/.claude/boringnotch/</string>
+		<string>/.claude/settings.json</string>
 	</array>
 	<key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
 	<array>

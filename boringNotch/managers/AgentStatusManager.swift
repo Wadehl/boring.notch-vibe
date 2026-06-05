@@ -144,11 +144,11 @@ final class AgentStatusManager: ObservableObject {
         }
 
         if bundleId == "com.apple.Terminal" {
-            guard AXIsProcessTrusted() else {
+            guard XPCHelperClient.shared.accessibilityAuthorized else {
                 XPCHelperClient.shared.requestAccessibilityAuthorization()
                 let alert = NSAlert()
                 alert.messageText = "需要辅助功能权限"
-                alert.informativeText = "请在系统设置中允许 boringNotch 使用辅助功能，然后重启 boringNotch 以生效。"
+                alert.informativeText = "请在系统设置中允许 BoringNotchXPCHelper 使用辅助功能，然后重启 boringNotch 以生效。"
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: "好的")
                 alert.runModal()
@@ -158,11 +158,11 @@ final class AgentStatusManager: ObservableObject {
                 self.dismissPendingInteraction(sessionId: sessionId)
             }
         } else if bundleId.hasPrefix("dev.warp.") {
-            guard AXIsProcessTrusted() else {
+            guard XPCHelperClient.shared.accessibilityAuthorized else {
                 XPCHelperClient.shared.requestAccessibilityAuthorization()
                 let alert = NSAlert()
                 alert.messageText = "需要辅助功能权限"
-                alert.informativeText = "请在系统设置中允许 boringNotch 使用辅助功能，然后重启 boringNotch 以生效。"
+                alert.informativeText = "请在系统设置中允许 BoringNotchXPCHelper 使用辅助功能，然后重启 boringNotch 以生效。"
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: "好的")
                 alert.runModal()
@@ -182,11 +182,11 @@ final class AgentStatusManager: ObservableObject {
 
     func sendMultiSelectAndFocus(claudePid: Int, optionIndices: [Int], sessionId: String?) {
         guard let terminal = terminalRunningApp(forPid: claudePid) else { return }
-        guard AXIsProcessTrusted() else {
+        guard XPCHelperClient.shared.accessibilityAuthorized else {
             XPCHelperClient.shared.requestAccessibilityAuthorization()
             let alert = NSAlert()
             alert.messageText = "需要辅助功能权限"
-            alert.informativeText = "请在系统设置中允许 boringNotch 使用辅助功能，然后重启 boringNotch 以生效。"
+            alert.informativeText = "请在系统设置中允许 BoringNotchXPCHelper 使用辅助功能，然后重启 boringNotch 以生效。"
             alert.alertStyle = .warning
             alert.addButton(withTitle: "好的")
             alert.runModal()

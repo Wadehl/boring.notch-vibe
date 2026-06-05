@@ -146,7 +146,7 @@ struct AgentDebugView: View {
     private var warpSection: some View {
         Section {
             let warpInstalled = isWarpInstalled
-            let axTrusted = AXIsProcessTrusted()
+            let axTrusted = XPCHelperClient.shared.accessibilityAuthorized
 
             HStack(spacing: 8) {
                 Image(systemName: warpInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")

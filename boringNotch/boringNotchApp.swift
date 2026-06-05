@@ -437,19 +437,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         previousScreens = NSScreen.screens
 
+        // Start polling XPC helper's accessibility status so the cached value stays fresh.
+        XPCHelperClient.shared.startMonitoringAccessibilityAuthorization()
+
         // Prompt for Accessibility permission on first launch or if not yet granted.
         // Delayed so the main window is visible before the alert appears.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.checkAccessibilityPermission()
+            Task {
+                let authorized = await XPCHelperClient.shared.isAccessibilityAuthorized()
+                if !authorized {
+                    await MainActor.run { self.checkAccessibilityPermission() }
+                }
+            }
         }
     }
 
     private func checkAccessibilityPermission() {
-        guard !AXIsProcessTrusted() else { return }
         XPCHelperClient.shared.requestAccessibilityAuthorization()
         let alert = NSAlert()
         alert.messageText = "需要辅助功能权限"
-        alert.informativeText = "boringNotch 需要辅助功能权限才能将 Claude Code 的回复发送到终端。\n\n请在「系统设置 → 隐私与安全性 → 辅助功能」中允许 boringNotch，然后重启应用。"
+        alert.informativeText = "boringNotch 需要辅助功能权限才能将 Claude Code 的回复发送到终端。\n\n请在「系统设置 → 隐私与安全性 → 辅助功能」中允许 BoringNotchXPCHelper，然后重启应用。"
         alert.alertStyle = .warning
         alert.addButton(withTitle: "打开系统设置")
         alert.addButton(withTitle: "稍后再说")
