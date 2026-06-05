@@ -10,6 +10,7 @@ struct AgentDebugView: View {
     @ObservedObject var manager = AgentStatusManager.shared
     @State private var refreshID = UUID()
     @State private var isFixingHooks = false
+    @State private var axTrusted: Bool = XPCHelperClient.shared.accessibilityAuthorized
 
     var body: some View {
         Form {
@@ -20,6 +21,15 @@ struct AgentDebugView: View {
         }
         .id(refreshID)
         .accentColor(.effectiveAccent)
+        .onAppear {
+            Task {
+                let result = await XPCHelperClient.shared.isAccessibilityAuthorized()
+                await MainActor.run { axTrusted = result }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .accessibilityAuthorizationChanged)) { note in
+            axTrusted = note.userInfo?["granted"] as? Bool ?? false
+        }
         .navigationTitle("Claude Code")
         .toolbar {
             Button {
@@ -146,7 +156,6 @@ struct AgentDebugView: View {
     private var warpSection: some View {
         Section {
             let warpInstalled = isWarpInstalled
-            let axTrusted = XPCHelperClient.shared.accessibilityAuthorized
 
             HStack(spacing: 8) {
                 Image(systemName: warpInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
