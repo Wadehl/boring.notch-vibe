@@ -40,7 +40,15 @@ The app uses `BoringNotchXPCHelper` (unsandboxed) for:
 
 The XPC helper is ad-hoc signed, so its TCC entry is keyed by binary hash. Every rebuild changes the hash → TCC no longer recognises it → Accessibility appears ungranted. This only affects local dev builds. Distributed DMG builds are stable because the binary doesn't change.
 
-Workaround during development: after granting Accessibility, avoid rebuilding the XPC helper target unnecessarily, or re-grant via System Settings each time.
+**Workaround for development (avoids re-granting every rebuild):**
+
+In Xcode, after the first successful build:
+1. In the Project Navigator, expand **Products** → right-click `boringNotch.app` → **Show in Finder**
+2. Open **System Settings → Privacy & Security → Accessibility**
+3. Drag the `.app` from Finder directly into the Accessibility list and enable it
+4. This path (`~/Library/Developer/Xcode/DerivedData/.../boringNotch.app`) stays fixed as long as you don't change the DerivedData location — subsequent builds replace the binary in-place, and TCC recognises it by path rather than hash for the main app
+
+Note: this workaround applies to the **main app** path. The XPC helper inside it is still hash-keyed; grant Accessibility to `BoringNotchXPCHelper` the same way (it appears separately in the list after first launch).
 
 ## Vibe-specific features (on top of upstream boringNotch)
 
@@ -50,3 +58,4 @@ Workaround during development: after granting Accessibility, avoid rebuilding th
 - **Right-click notch** → Settings / Quit boringNotch.
 - **Completion card** — title = user message, body = last pure-text assistant reply; tapping jumps to terminal then dismisses.
 - **Auto-close notch** when all pending interactions are dismissed.
+
