@@ -1304,9 +1304,6 @@
         }
       }
     },
-    "5 秒后自动关闭" : {
-
-    },
     "About" : {
       "localizations" : {
         "ar" : {
@@ -16934,6 +16931,9 @@
         }
       }
     },
+    "Quit BoringNotch.Vibe" : {
+
+    },
     "Release name" : {
       "localizations" : {
         "ar" : {
@@ -22738,6 +22738,9 @@
           }
         }
       }
+    },
+    "Vibe Watcher" : {
+
     },
     "View on GitHub: pear-devs/pear-desktop" : {
       "localizations" : {

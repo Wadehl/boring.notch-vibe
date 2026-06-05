@@ -241,6 +241,8 @@ struct AgentInteractionView: View {
 
     private func focusTerminal() {
         if interaction.type == .completion {
+            // Jump to terminal just like a normal interaction; dismiss regardless of outcome
+            manager.focusTerminal(claudePid: interaction.pid, sessionId: interaction.sessionId, dismissOnSuccess: false)
             manager.dismissPendingInteraction(sessionId: interaction.sessionId)
         } else {
             manager.focusTerminal(claudePid: interaction.pid, sessionId: interaction.sessionId)

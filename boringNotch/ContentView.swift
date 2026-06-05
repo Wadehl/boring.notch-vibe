@@ -195,6 +195,11 @@ struct ContentView: View {
                         //                        dn.toggle()
                         //                    }
                         //                    .keyboardShortcut("E", modifiers: .command)
+                        Divider()
+                        Button("Quit boringNotch", role: .destructive) {
+                            NSApplication.shared.terminate(nil)
+                        }
+                        .keyboardShortcut("q", modifiers: .command)
                     }
                 if vm.chinHeight > 0 {
                     Rectangle()
