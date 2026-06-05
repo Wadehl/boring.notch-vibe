@@ -718,6 +718,36 @@ final class AgentStatusManager: ObservableObject {
         return lastUserText.map { String($0.prefix(80)) }
     }
 
+    /// Reads the last assistant text reply from the session JSONL for use in the completion card.
+    private func readLastAssistantMessage(cwd: String, sessionId: String) -> String? {
+        let encodedCwd = encodeCwd(cwd)
+        let jsonlFile = Self.realHomeURL
+            .appendingPathComponent(".claude/projects")
+            .appendingPathComponent(encodedCwd)
+            .appendingPathComponent("\(sessionId).jsonl")
+
+        guard let content = try? String(contentsOf: jsonlFile, encoding: .utf8) else { return nil }
+
+        for line in content.components(separatedBy: "\n").reversed() {
+            guard !line.isEmpty,
+                  let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  json["type"] as? String == "assistant",
+                  let message = json["message"] as? [String: Any],
+                  let contentArr = message["content"] as? [[String: Any]]
+            else { continue }
+
+            let text = contentArr.compactMap { block -> String? in
+                guard block["type"] as? String == "text" else { return nil }
+                return block["text"] as? String
+            }.joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if !text.isEmpty { return String(text.prefix(80)) }
+        }
+        return nil
+    }
+
     /// Scans the session JSONL tail to detect if Claude Code is waiting for user input.
     /// Returns a PendingInteraction if the last assistant tool_use is AskUserQuestion or ExitPlanMode
     /// and no user tool_result has been sent for it yet.
@@ -1298,7 +1328,8 @@ final class AgentStatusManager: ObservableObject {
         case "permissionrequest":
             handlePermissionRequestHook(obj, sessionId: sessionId)
         case "stop":
-            handleResponseCompleteHook(sessionId: sessionId)
+            let cwd = obj["cwd"] as? String
+            handleResponseCompleteHook(sessionId: sessionId, cwd: cwd)
         case "sessionend":
             print("[HookMonitor] SessionEnd sid=\(sessionId.prefix(8)) (ignored)")
         default:
@@ -1408,14 +1439,16 @@ final class AgentStatusManager: ObservableObject {
         }
     }
 
-    private func handleResponseCompleteHook(sessionId: String) {
+    private func handleResponseCompleteHook(sessionId: String, cwd: String?) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let pid = self.sessionIdToPid[sessionId]
                 ?? self.sessions.first { $0.sessionId == sessionId }?.id
                 ?? sessionId
-            let summary = self.sessions.first { $0.sessionId == sessionId }?.summary
-            print("[HookMonitor] Stop sid=\(sessionId.prefix(8)) pid=\(pid)")
+            let resolvedCwd = cwd ?? self.sessions.first { $0.sessionId == sessionId }?.cwd
+            let lastReply = resolvedCwd.flatMap { self.readLastAssistantMessage(cwd: $0, sessionId: sessionId) }
+            let summary = lastReply ?? self.sessions.first { $0.sessionId == sessionId }?.summary
+            print("[HookMonitor] Stop sid=\(sessionId.prefix(8)) pid=\(pid) summary=\(summary ?? "nil")")
 
             // Badge in AgentStatusView for 5s
             self.recentlyDoneSessions.insert(pid)
