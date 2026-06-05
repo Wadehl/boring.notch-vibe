@@ -218,6 +218,8 @@ struct ContentView: View {
         .onChange(of: agentManager.pendingInteractions.isEmpty) { _, isEmpty in
             if !isEmpty && vm.notchState == .closed {
                 withAnimation(.smooth) { vm.open() }
+            } else if isEmpty && !isHovering && !vm.isBatteryPopoverActive && !SharingStateManager.shared.preventNotchClose {
+                withAnimation(.smooth) { vm.close() }
             }
         }
         .onChange(of: vm.anyDropZoneTargeting) { _, isTargeted in
